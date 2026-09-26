@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TaxCalc AU</title>
+    <meta name="description" content="Client-side Australian tax deductions estimator — track income and work-related expenses, calculate depreciation and WFH deductions (fixed-rate or actual cost), and estimate your tax outcome. All data stays in your browser.">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles complementing Tailwind */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .app-section {
+            display: none; /* Hidden by default, JS will show active section */
+        }
+        .active-section {
+            display: block;
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes highlight-flash {
+            0% { background-color: rgba(199, 210, 254, 0.7); } /* Tailwind's indigo-200 with opacity */
+            100% { background-color: transparent; }
+        }
+        .flash-highlight {
+            animation: highlight-flash 1.2s ease-out;
+        }
+        .nav-button.active {
+            background-color: #1D4ED8; /* Tailwind's blue-700 */
+            color: white;
+            font-weight: 600;
+        }
+        .button-like-label {
+            padding: 0.5rem 1rem;
+            background-color: #3B82F6; /* Tailwind's blue-500 */
+            color: white;
+            border-radius: 0.375rem; /* Tailwind's rounded-md */
+            cursor: pointer;
+            display: inline-block;
+            text-align: center;
+            transition: background-color 0.2s;
+        }
+        .button-like-label:hover {
+            background-color: #2563EB; /* Tailwind's blue-600 */
+        }
+        .tooltip-text {
+            font-size: 0.75rem; /* Tailwind's text-xs */
+            color: #6B7280; /* Tailwind's gray-500 */
+        }
+        /* Form field styling */
+        input[type="text"], input[type="number"], input[type="date"], select {
+            border: 1px solid #D1D5DB; /* Tailwind's gray-300 */
+            padding: 0.5rem;
+            border-radius: 0.375rem; /* Tailwind's rounded-md */
+            width: 100%;
+            margin-top: 0.25rem;
+            margin-bottom: 0.5rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        /* Restored original accessible focus style for inputs */
+        input:focus, select:focus {
+            outline: none;
+            border-color: #2563EB;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+        }
+        
+        /* This rule replaces the fieldset border with a modern card-like shadow and background */
+        fieldset {
+            border: none; /* Removed the 1px border */
+            background-color: #FFFFFF; /* Added a white background */
+            padding: 1rem;
+            margin-bottom: 1.5rem; /* Increased margin slightly */
+            border-radius: 0.5rem; /* Tailwind's rounded-lg */
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1); /* Tailwind's shadow-md */
+        }
+        legend {
+            font-weight: 600; /* Tailwind's semibold */
+            padding: 0 0.5rem;
+        }
+        /* Modal Styles */
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .modal-backdrop.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transform: scale(0.95);
+            transition: transform 0.3s ease;
+            width: 90%;
+            max-width: 500px;
+        }
+        .modal-backdrop.visible .modal-content {
+            transform: scale(1);
+        }
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.5rem;
+            margin-top: 1.5rem;
+        }
+        #nav-scroll-container {
+            overflow-x: auto;
+            /* Hides the scrollbar for a cleaner look */
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+        #nav-scroll-container::-webkit-scrollbar {
+            display: none; /* Chrome, Safari, and Opera */
+        }
+    </style>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-63JCXZHLQK"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+
+        gtag('config', 'G-63JCXZHLQK');
+    </script>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <header class="bg-blue-600 text-white p-6 shadow-md">
+        <div class="max-w-7xl mx-auto">
+            <h1 class="text-3xl font-bold text-center mb-3">TaxCalc AU</h1>
+            <div class="flex justify-center">
+                <select id="financial-year-selector" class="bg-blue-700 text-white text-base font-semibold rounded border border-blue-400 px-3 py-1.5 cursor-pointer hover:bg-blue-800 transition-colors">
+                    <!-- Populated by JS -->
+                </select>
+            </div>
+        </div>
+    </header>
+
+    <nav id="main-nav" class="bg-blue-500 p-2 shadow sticky top-0 z-50">
+        <div id="nav-scroll-container" class="flex items-center justify-start sm:justify-center space-x-1 sm:space-x-2">
+            <button data-section="dashboard-section" class="nav-button flex-shrink-0 px-3 py-2 text-sm sm:text-base rounded-md text-white hover:bg-blue-700 transition-colors">Dashboard</button>
+            <button data-section="income-section" class="nav-button flex-shrink-0 px-3 py-2 text-sm sm:text-base rounded-md text-white hover:bg-blue-700 transition-colors">Income</button>
+            <button data-section="general-expenses-section" class="nav-button flex-shrink-0 px-3 py-2 text-sm sm:text-base rounded-md text-white hover:bg-blue-700 transition-colors">Expenses</button>
+            <button data-section="wfh-section" class="nav-button flex-shrink-0 px-3 py-2 text-sm sm:text-base rounded-md text-white hover:bg-blue-700 transition-colors">WFH</button>
+            <button data-section="summary-section" class="nav-button flex-shrink-0 px-3 py-2 text-sm sm:text-base rounded-md text-white hover:bg-blue-700 transition-colors">Summary</button>
+        </div>
+    </nav>
+
+    <main id="app-container" class="p-4 md:p-8 max-w-full mx-auto grid grid-cols-1 lg:grid-cols-6 gap-6">
+        <div class="lg:col-span-1 space-y-6">
+            <div class="bg-white p-6 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold mb-4">Support the Project</h3>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold mb-4">GitHub Repository</h3>
+                <p class="text-sm mb-4">If you find this tool useful, please consider starring the project on GitHub! It helps a lot.</p>
+                <a href="https://github.com/vectorwren/taxcalc-au" target="_blank" rel="noopener noreferrer" class="inline-block w-full text-center bg-gray-800 hover:bg-gray-900 text-white font-bold py-2 px-4 rounded transition-colors">
+                    ⭐ Star on GitHub
+                </a>
+            </div>
+        </div>
+
+        <div class="lg:col-span-3">
+            <section id="dashboard-section" class="app-section bg-white p-6 rounded-lg shadow-lg">
+                <h2 class="text-2xl font-semibold mb-4 text-blue-800">Dashboard</h2>
+                <p class="mb-6">Welcome! This tool helps you estimate your tax outcome for the <span class="financialYearDisplay font-semibold"></span> financial year.</p>
+                <div class="quick-summary grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div class="bg-green-50 p-4 rounded-lg shadow-inner border border-green-200">
+                        <h3 class="font-semibold text-gray-700">Est. Taxable Income</h3>
+                        <p id="dashboard-taxable-income" class="text-2xl font-bold text-green-600">$0.00</p>
+                    </div>
+                    <div class="bg-red-50 p-4 rounded-lg shadow-inner border border-red-200">
+                        <h3 class="font-semibold text-gray-700">Est. Total Deductions</h3>
+                        <p id="dashboard-total-deductions" class="text-2xl font-bold text-red-600">$0.00</p>
+                    </div>
+                    <div class="bg-blue-50 p-4 rounded-lg shadow-inner border border-blue-200">
+                        <h3 class="font-semibold text-gray-700">Est. Tax Outcome</h3>
+                        <p id="dashboard-tax-outcome" class="text-xl font-bold text-blue-800">Calculating...</p>
+                    </div>
+                </div>
+                <p class="mb-2">Use the navigation above to manage your income, expenses, and work-from-home details.</p>
+                <p class="text-sm text-gray-600">Remember to save your data regularly by exporting it, as all information is stored locally in your browser.</p>
+            </section>
+
+            <section id="income-section" class="app-section bg-white p-6 rounded-lg shadow-lg">
+                <h2 class="text-2xl font-semibold mb-4 text-blue-800">Income & Taxpayer Details</h2>
+                
+                <form id="taxpayer-details-form" class="mb-6">
+                    <fieldset>
+                        <legend class="text-lg font-medium text-gray-700">Taxpayer Details</legend>
+                        <div class="mt-2 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                            <div>
+                                <label for="filing-status" class="block text-sm font-medium text-gray-700">Filing Status:</label>
+                                <select id="filing-status" name="filing-status">
+                                    <option value="single">Single</option>
+                                    <option value="family">Family</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="rfb-amount" class="block text-sm font-medium text-gray-700">Reportable Fringe Benefits Amount ($):</label>
+                                <input type="number" id="rfb-amount" name="rfb-amount" step="0.01" min="0">
+                                <p class="tooltip-text mt-1">Found on your income statement. Used for income tests.</p>
+                            </div>
+
+                            <div class="md:col-span-2">
+                                <label for="personal-super-contribution" class="block text-sm font-medium text-gray-700">Deductible Personal Super Contribution ($):</label>
+                                <input type="number" id="personal-super-contribution" name="personal-super-contribution" step="0.01" min="0">
+                            </div>
+
+                            <div id="family-fields" class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 hidden">
+                                <div>
+                                    <label for="spouse-income" class="block text-sm font-medium text-gray-700">Spouse's Income for MLS ($):</label>
+                                    <input type="number" id="spouse-income" name="spouse-income" step="0.01" min="0">
+                                </div>
+                                <div>
+                                    <label for="dependent-children" class="block text-sm font-medium text-gray-700">Number of Dependent Children:</label>
+                                    <input type="number" id="dependent-children" name="dependent-children" step="1" min="0">
+                                </div>
+                            </div>
+                            
+                            <div class="md:col-span-2 space-y-3 pt-2">
+                                <div class="flex items-center space-x-2">
+                                    <input type="checkbox" id="medicare-exempt" name="medicare-exempt" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                    <label for="medicare-exempt" class="text-sm font-medium text-gray-700">I am exempt from the Medicare Levy for some or all of the year.</label>
+                                </div>
+                                
+                                <div id="medicare-exempt-days-container" class="hidden pl-6">
+                                    <label for="medicare-exempt-days" class="block text-sm font-medium text-gray-700">Number of exempt days:</label>
+                                    <input type="number" id="medicare-exempt-days" name="medicare-exempt-days" min="0" max="365" step="1">
+                                    <p class="tooltip-text mt-1">Enter the number of days you were NOT eligible for Medicare. A full exemption is 365 days.</p>
+                                </div>
+
+                                <div class="flex items-center space-x-2">
+                                    <input type="checkbox" id="private-cover" name="private-cover" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                    <label for="private-cover" class="text-sm font-medium text-gray-700">I have appropriate private patient hospital cover for the full year.</label>
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
+                    
+                    <fieldset>
+                        <legend class="text-lg font-medium text-gray-700">Private Health Insurance</legend>
+                        <div class="mt-2 grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4">
+                            <div>
+                                <label for="phi-age-bracket" class="block text-sm font-medium text-gray-700">Your Age Bracket:</label>
+                                <select id="phi-age-bracket" name="phi-age-bracket">
+                                    <option value="under65">Under 65</option>
+                                    <option value="65to69">65-69</option>
+                                    <option value="70plus">70+</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label id="phi-period1-label" for="phi-premiums-paid-period1" class="block text-sm font-medium text-gray-700">Premiums Paid (Jul 2024 - Mar 2025):</label>
+                                <input type="number" id="phi-premiums-paid-period1" name="phi-premiums-paid-period1" step="0.01" min="0">
+                                <p class="tooltip-text mt-1">Your share from your own statement only.</p>
+                            </div>
+                            <div>
+                                <label id="phi-period2-label" for="phi-premiums-paid-period2" class="block text-sm font-medium text-gray-700">Premiums Paid (Apr 2025 - Jun 2025):</label>
+                                <input type="number" id="phi-premiums-paid-period2" name="phi-premiums-paid-period2" step="0.01" min="0">
+                                <p class="tooltip-text mt-1">Your share from your own statement only.</p>
+                            </div>
+                            <div>
+                                <label for="phi-rebate-received" class="block text-sm font-medium text-gray-700">Rebate Received ($):</label>
+                                <input type="number" id="phi-rebate-received" name="phi-rebate-received" step="0.01" min="0" placeholder="From your statement">
+                                <p class="tooltip-text mt-1">Your share from your own statement only.</p>
+                            </div>
+                        </div>
+                        <p class="tooltip-text mt-2">
+                            Enter amounts from <strong>your own</strong> private health insurance statement only — not the household policy total. Each adult
+                            beneficiary on the policy receives a separate statement showing their share of the policy only; your spouse's share belongs on
+                            their own return. Entering household totals here overstates your premiums and rebate and distorts the offset.
+                        </p>
+                    </fieldset>
+
+                    <button type="submit" class="mt-4 w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition-colors">Save Details</button>
+                </form>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <form id="income-form">
+                        <fieldset>
+                            <legend class="text-lg font-medium text-gray-700">PAYG Income Statement</legend>
+                            <div class="mt-2 space-y-4">
+                                <div>
+                                    <label for="income-source-name" class="block text-sm font-medium text-gray-700">Employer/Payer Name:</label>
+                                    <input type="text" id="income-source-name" name="income-source-name">
+                                </div>
+                                <div>
+                                    <label for="gross-salary" class="block text-sm font-medium text-gray-700">Gross Salary/Wages ($):</label>
+                                    <input type="number" id="gross-salary" name="gross-salary" step="0.01" min="0" required>
+                                </div>
+                                <div>
+                                    <label for="tax-withheld" class="block text-sm font-medium text-gray-700">Total Tax Withheld ($):</label>
+                                    <input type="number" id="tax-withheld" name="tax-withheld" step="0.01" min="0" required>
+                                </div>
+                            </div>
+                            <button type="submit" class="mt-4 w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded transition-colors">Add PAYG Income</button>
+                        </fieldset>
+                    </form>
+                    <form id="other-income-form">
+                        <fieldset>
+                            <legend class="text-lg font-medium text-gray-700">Other Income</legend>
+                            <div class="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="bank-interest" class="block text-sm font-medium text-gray-700">Bank Interest ($):</label>
+                                    <input type="number" id="bank-interest" name="bank-interest" step="0.01" min="0">
+                                </div>
+                                <div>
+                                    <label for="net-capital-gains" class="block text-sm font-medium text-gray-700">Net Capital Gains ($):</label>
+                                    <input type="number" id="net-capital-gains" name="net-capital-gains" step="0.01" min="0">
+                                </div>
+                                <div>
+                                    <label for="dividends-unfranked" class="block text-sm font-medium text-gray-700">Dividends (Unfranked):</label>
+                                    <input type="number" id="dividends-unfranked" name="dividends-unfranked" step="0.01" min="0">
+                                </div>
+                                <div>
+                                    <label for="dividends-franked" class="block text-sm font-medium text-gray-700">Dividends (Franked):</label>
+                                    <input type="number" id="dividends-franked" name="dividends-franked" step="0.01" min="0">
+                                </div>
+                                <div>
+                                    <label for="franking-credits" class="block text-sm font-medium text-gray-700">Franking Credits:</label>
+                                    <input type="number" id="franking-credits" name="franking-credits" step="0.01" min="0">
+                                </div>
+                            </div>
+                            <button type="submit" class="mt-4 w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded transition-colors">Add/Update Other Income</button>
+                        </fieldset>
+                    </form>
+                </div>
+                <h3 class="text-xl font-semibold mt-8 mb-2 text-gray-800">Income Summary</h3>
+                <div id="income-summary-table-container" class="overflow-x-auto mb-4">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="bg-gray-100">
+                                <th class="p-2 text-left text-sm font-semibold text-gray-600">Source</th>
+                                <th class="p-2 text-left text-sm font-semibold text-gray-600">Gross Amount</th>
+                                <th class="p-2 text-left text-sm font-semibold text-gray-600">Tax Withheld</th>
+                                <th class="p-2 text-left text-sm font-semibold text-gray-600">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="income-list">
+                            <tr><td colspan="4" class="text-center text-gray-500 py-4">No income added yet.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="text-right font-semibold text-lg mt-4 space-y-1">
+                    <p>Total Assessable Income: <strong id="total-assessable-income" class="text-green-600">$0.00</strong></p>
+                    <p>Total Tax Withheld: <strong id="total-tax-withheld-summary" class="text-red-600">$0.00</strong></p>
+                </div>
+            </section>
+
+            <section id="general-expenses-section" class="app-section bg-white p-6 rounded-lg shadow-lg">
+                <h2 class="text-2xl font-semibold mb-4 text-blue-800">General Work-Related Expenses</h2>
+                <form id="general-expense-form" class="mb-6">
+                    <fieldset>
+                        <legend class="text-lg font-medium text-gray-700">Add New Expense</legend>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                            <div>
+                                <label for="expense-description" class="block text-sm font-medium text-gray-700">Description:</label>
+                                <input type="text" id="expense-description" name="expense-description" required>
+                            </div>
+                            <div>
+                                <label for="expense-date" class="block text-sm font-medium text-gray-700">Date of Purchase:</label>
+                                <input type="date" id="expense-date" name="expense-date" required>
+                            </div>
+                            <div>
+                                <label for="expense-cost" class="block text-sm font-medium text-gray-700">Cost ($):</label>
+                                <input type="number" id="expense-cost" name="expense-cost" step="0.01" min="0" required>
+                            </div>
+                            <div>
+                                <label for="expense-category" class="block text-sm font-medium text-gray-700">Category:</label>
+                                <select id="expense-category" name="expense-category">
+                                    <option value="tools">Tools & Equipment</option>
+                                    <option value="education">Self-Education</option>
+                                    <option value="travel">Work-Related Travel</option>
+                                    <option value="uniform">Uniform/Protective Clothing</option>
+                                    <option value="income_protection">Income Protection Insurance</option>
+                                    <option value="tax_affairs">Cost of Managing Tax Affairs</option>
+                                    <option value="donations">Gifts & Donations</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label for="expense-work-percentage" class="block text-sm font-medium text-gray-700">Work-Related Use (%):</label>
+                                <input type="number" id="expense-work-percentage" name="expense-work-percentage" min="0" max="100" value="100" step="1">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label for="expense-asset-type" class="block text-sm font-medium text-gray-700">Asset Type:</label>
+                                <select id="expense-asset-type" name="expense-asset-type">
+                                    <option value="equipment" selected>Equipment (physical asset)</option>
+                                    <option value="service">Service (subscription, support plan)</option>
+                                    <option value="consumable">Consumable (used up, e.g. toner)</option>
+                                </select>
+                                <p class="tooltip-text mt-1">Services and consumables are deducted in full when paid — the ATO's $300 asset tests don't apply to them.</p>
+                            </div>
+                            <div class="md:col-span-2 flex items-center space-x-2">
+                                <input type="checkbox" id="expense-is-depreciable" name="expense-is-depreciable" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <label for="expense-is-depreciable" class="text-sm font-medium text-gray-700">Is this a depreciable asset (cost > $300 and lasts > 1 year)?</label>
+                            </div>
+                        </div>
+                        <div id="depreciation-fields" class="hidden mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="expense-effective-life" class="block text-sm font-medium text-gray-700">Effective Life (Years):</label>
+                                <input type="number" id="expense-effective-life" name="expense-effective-life" step="1" min="1">
+                                <p class="tooltip-text mt-1">
+                                    Common ATO effective lives: computers &amp; computer equipment 4 years; laptops, tablets &amp; other portable computers 2 years;
+                                    mainframe &amp; network equipment 5 years. See the
+                                    <a href="https://www.ato.gov.au/businesses-and-organisations/income-deductions-and-concessions/depreciation-and-capital-expenses-and-allowances/general-depreciation-rules-capital-allowances/effective-life-of-an-asset" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">ATO effective-life determination</a>.
+                                </p>
+                            </div>
+                            <div>
+                                <label for="depreciation-method" class="block text-sm font-medium text-gray-700">Depreciation Method:</label>
+                                <select id="depreciation-method" name="depreciation-method">
+                                    <option value="prime_cost">Prime Cost (Straight Line)</option>
+                                    <option value="diminishing_value">Diminishing Value</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="submit" class="mt-4 w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded transition-colors">Add Expense</button>
+                    </fieldset>
+                </form>
+                <h3 class="text-xl font-semibold mb-2 text-gray-800">Logged Expenses</h3>
+                <div id="general-expenses-table-container" class="overflow-x-auto mb-4">
+                    <table class="w-full">
+                        <thead>
+                            <tr class="bg-gray-100">
+                                <th class="p-2 text-left text-sm font-semibold text-gray-600">Description</th>
+                                <th class="p-2 text-left text-sm font-semibold text-gray-600">Date</th>
+                                <th class="p-2 text-left text-sm font-semibold text-gray-600">Cost</th>
+                                <th class="p-2 text-left text-sm font-semibold text-gray-600">Work %</th>
+                                <th class="p-2 text-left text-sm font-semibold text-gray-600">Method</th>
+                                <th class="p-2 text-left text-sm font-semibold text-gray-600">Deductible (This FY)</th>
+                                <th class="p-2 text-left text-sm font-semibold text-gray-600">Claim Schedule</th>
+                                <th class="p-2 text-left text-sm font-semibold text-gray-600">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="general-expenses-list">
+                            <tr><td colspan="8" class="text-center text-gray-500 py-4">No general expenses added yet.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-right font-semibold text-lg">Total General Deductions: <strong id="total-general-deductions" class="text-red-600">$0.00</strong></p>
+            </section>
+
+            <section id="wfh-section" class="app-section bg-white p-6 rounded-lg shadow-lg">
+                <h2 class="text-2xl font-semibold mb-4 text-blue-800">Work-From-Home (WFH) Expenses</h2>
+                <div class="wfh-method-choice mb-6">
+                    <fieldset>
+                        <legend class="text-md font-medium text-gray-800 mb-3">Choose your WFH calculation method:</legend>
+                        <div class="flex space-x-4 mt-2">
+                            <button id="wfh-use-fixed-rate-btn" class="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-md transition-colors">Use ATO Fixed Rate</button>
+                            <button id="wfh-use-actual-cost-btn" class="flex-1 bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-md transition-colors">Use Actual Cost</button>
+                        </div>
+                        <p class="mt-3 text-sm">Current Method: <strong id="wfh-current-method-display" class="text-gray-800 font-semibold">Not Selected</strong></p>
+                    </fieldset>
+                </div>
+
+                <div id="wfh-hours-logging" class="mb-6">
+                    <fieldset>
+                        <legend class="text-lg font-semibold text-gray-700 mb-2">Log WFH Hours (Required for Fixed Rate)</legend>
+                        <form id="wfh-hours-form" class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end mt-2">
+                            <div>
+                                <label for="wfh-date" class="block text-sm font-medium text-gray-700">Date:</label>
+                                <input type="date" id="wfh-date" name="wfh-date" required>
+                            </div>
+                            <div>
+                                <label for="wfh-hours" class="block text-sm font-medium text-gray-700">Hours Worked From Home:</label>
+                                <input type="number" id="wfh-hours" name="wfh-hours" step="0.25" min="0" required>
+                            </div>
+                            <button type="submit" class="h-10 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded transition-colors">Log Hours</button>
+                        </form>
+                        <div class="md:col-span-3 mt-4">
+                            <label for="wfh-hours-csv-import" class="button-like-label bg-gray-500 hover:bg-gray-600 text-xs">Import Hours from CSV</label>
+                            <input type="file" id="wfh-hours-csv-import" class="hidden" accept=".csv">
+                            <p class="tooltip-text mt-1">CSV format: Day,Duration,Description (e.g., 10-06-2025,02:30,Work). The 'Time' column is treated as a duration in HH:MM format and summed for each day.</p>
+
+                        </div>
+                        <p class="mb-2 font-medium mt-4">Total WFH Hours Logged: <strong id="wfh-total-hours" class="text-blue-600">0.00</strong></p>
+                        <h4 class="font-medium text-gray-600 mb-1">Logged Hours Diary:</h4>
+                        <div id="wfh-hours-list-container" class="max-h-40 overflow-y-auto bg-gray-50 p-2 rounded-md border text-sm">
+                            <ul id="wfh-hours-list" class="list-disc list-inside pl-4">
+                                <li class="text-gray-400">No hours logged yet.</li>
+                            </ul>
+                        </div>
+                    </fieldset>
+                </div>
+
+                <div id="wfh-fixed-rate-details" class="wfh-method-details hidden mb-6">
+                    <fieldset>
+                        <legend class="text-md font-semibold text-indigo-700 mb-2">ATO Fixed Rate Method Details</legend>
+                        <p class="text-sm mb-1 mt-2">The ATO fixed rate for <span class="financialYearDisplay font-semibold"></span> is <strong id="wfh-fixed-rate-value" class="text-indigo-700"></strong> per hour.</p>
+                        <p class="text-sm mb-1">This rate covers electricity, gas, internet, phone, stationery, and computer consumables. You cannot claim separate deductions for these items.</p>
+                        <p class="text-sm font-semibold">Estimated Deduction (Fixed Rate): <strong id="wfh-fixed-rate-deduction" class="text-indigo-700">$0.00</strong></p>
+                        <p class="tooltip-text mt-2"><b>Record keeping:</b> You need a record of all hours worked from home (e.g., timesheets, diary) and evidence you paid for at least one of the expenses covered by the rate (e.g., one energy bill).</p>
+                    </fieldset>
+                </div>
+
+                <div id="wfh-actual-cost-details" class="wfh-method-details hidden mb-6">
+                    <h3 class="text-md font-semibold text-purple-700 mb-2">Actual Cost Method Details</h3>
+                    <p class="text-sm mb-4">Calculate the work-related portion of your actual WFH expenses. You must keep detailed records for all claimed expenses.</p>
+                    <div id="wfh-actual-cost-form">
+                        <fieldset class="mb-4">
+                            <legend class="text-sm font-medium text-gray-600">1. Property Periods</legend>
+                            <p class="text-xs text-gray-500 mt-1 mb-2">Add each property you worked from during the year. If you moved mid-year, add a separate period for each address.</p>
+                            <div id="wfh-properties-table-container" class="overflow-x-auto my-2">
+                                <table class="w-full">
+                                    <thead>
+                                        <tr class="bg-gray-100">
+                                            <th class="p-2 text-left text-xs font-semibold text-gray-600">#</th>
+                                            <th class="p-2 text-left text-xs font-semibold text-gray-600">Description</th>
+                                            <th class="p-2 text-left text-xs font-semibold text-gray-600">Period</th>
+                                            <th class="p-2 text-left text-xs font-semibold text-gray-600">Office / Home</th>
+                                            <th class="p-2 text-left text-xs font-semibold text-gray-600">Floor %</th>
+                                            <th class="p-2 text-left text-xs font-semibold text-gray-600">Running Deduction</th>
+                                            <th class="p-2 text-left text-xs font-semibold text-gray-600">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="wfh-properties-list-body">
+                                        <tr><td colspan="7" class="text-center text-gray-400 py-2">No property periods added yet. Add one below.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <button type="button" id="add-wfh-property-btn" class="text-sm bg-purple-400 hover:bg-purple-500 text-white px-3 py-1.5 rounded-md transition-colors">Add Property Period</button>
+                            <div class="text-right font-semibold text-sm mt-2 p-2 bg-purple-50 rounded-md">Total Running Expenses Deduction: <strong id="wfh-running-expenses-subtotal" class="text-purple-700">$0.00</strong></div>
+                        </fieldset>
+                        <fieldset>
+                            <legend class="text-sm font-medium text-gray-600">2. WFH Depreciable Assets</legend>
+                            <div id="wfh-assets-table-container" class="overflow-x-auto my-2">
+                                <table class="w-full">
+                                    <thead>
+                                        <tr class="bg-gray-100">
+                                            <th class="p-2 text-left text-xs font-semibold text-gray-600">#</th>
+                                            <th class="p-2 text-left text-xs font-semibold text-gray-600">Description</th>
+                                            <th class="p-2 text-left text-xs font-semibold text-gray-600">Date</th>
+                                            <th class="p-2 text-left text-xs font-semibold text-gray-600">Cost</th>
+                                            <th class="p-2 text-left text-xs font-semibold text-gray-600">Work %</th>
+                                            <th class="p-2 text-left text-xs font-semibold text-gray-600">Method</th>
+                                            <th class="p-2 text-left text-xs font-semibold text-gray-600">Deductible (This FY)</th>
+                                            <th class="p-2 text-left text-xs font-semibold text-gray-600">Claim Schedule</th>
+                                            <th class="p-2 text-left text-xs font-semibold text-gray-600">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="wfh-assets-list-body">
+                                         <tr><td colspan="9" class="text-center text-gray-400 py-2">No assets added yet.</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <button type="button" id="add-wfh-asset-btn" class="text-sm bg-purple-400 hover:bg-purple-500 text-white px-3 py-1.5 rounded-md transition-colors">Add WFH Asset</button>
+                            <div class="text-right font-semibold text-sm mt-2 p-2 bg-purple-50 rounded-md">Deductible Assets (This FY): <strong id="wfh-assets-subtotal" class="text-purple-700">$0.00</strong></div>
+                        </fieldset>
+                    </div>
+                    <p class="text-sm font-semibold mt-4 rounded-md p-2">Estimated Deduction (Actual Costs): <strong id="wfh-actual-cost-deduction" class="text-purple-700">$0.00</strong></p>
+                </div>
+
+                <hr class="my-4">
+                <p class="text-right font-semibold text-lg">Total WFH Deduction Claimed: <strong id="total-wfh-deduction" class="text-red-600">$0.00</strong></p>
+            </section>
+
+            <section id="summary-section" class="app-section bg-white p-6 rounded-lg shadow-lg">
+                <h2 class="text-2xl font-semibold mb-4 text-blue-800">Tax Estimation Summary (<span class="financialYearDisplay"></span>)</h2>
+                <div id="identical-assets-warning" class="hidden mb-4 p-4 rounded-lg border border-amber-300 bg-amber-50">
+                    <h3 class="text-sm font-semibold text-amber-800 mb-1">Review: identical low-value assets</h3>
+                    <ul id="identical-assets-warning-list" class="list-disc pl-5 text-sm text-amber-900 space-y-1"></ul>
+                    <p class="text-xs text-amber-800 mt-2">
+                        The ATO tests the $300 immediate-deduction threshold on the <em>combined</em> cost of identical or substantially identical assets
+                        you started to hold this income year — these items may need to be depreciated instead of claimed in full. Assets bought as a set
+                        (e.g. a desk and chair marketed together) can also lose the immediate deduction. If a group is really a service or consumable
+                        (a subscription, printer filament), use the button to mark it as such — your deductions don't change, the group just stops being
+                        flagged, and you can undo it per item with the Asset Type selector. This is a warning only; nothing is changed automatically.
+                    </p>
+                </div>
+                <div id="sameday-set-notice" class="hidden mb-4 p-4 rounded-lg border border-slate-300 bg-slate-50">
+                    <h3 class="text-sm font-semibold text-slate-700 mb-1">Worth checking: items bought on the same day</h3>
+                    <ul id="sameday-set-notice-list" class="list-disc pl-5 text-sm text-slate-700 space-y-1"></ul>
+                    <p class="text-xs text-slate-600 mt-2">
+                        Were these bought together as a <em>set</em> (interdependent, marketed together, or designed to be used together)? If so, the ATO tests the
+                        $300 threshold on the set's total cost and they may need to be depreciated. Unrelated items bought the same day are not a set — this is a
+                        question, not a warning, and nothing has been changed.
+                    </p>
+                </div>
+                <div id="crossyear-audit-warning" class="hidden mb-4 p-4 rounded-lg border border-red-300 bg-red-50">
+                    <h3 class="text-sm font-semibold text-red-800 mb-1">Records disagree across years</h3>
+                    <ul id="crossyear-audit-warning-list" class="list-disc pl-5 text-sm text-red-900 space-y-1"></ul>
+                    <p class="text-xs text-red-800 mt-2">
+                        Storage is per financial year, so a depreciating asset is re-entered in each year it declines in value — and these copies don't match.
+                        Each year's schedule is computed from its own copy, so the carried written-down value is wrong until they agree.
+                        Decide which record is correct and update the other year. Nothing is changed automatically.
+                    </p>
+                </div>
+                <div class="summary-grid space-y-2 text-gray-700 text-lg">
+                    <div class="summary-item flex justify-between py-2 border-b">
+                        <span>Total Assessable Income:</span>
+                        <strong id="summary-assessable-income" class="text-green-600">$0.00</strong>
+                    </div>
+                    <div class="summary-item flex justify-between py-2 border-b">
+                        <span>Total Deductions:</span>
+                        <strong id="summary-total-deductions" class="text-red-600">$0.00</strong>
+                    </div>
+                    <div class="summary-item sub-item flex justify-between py-1 pl-6 text-base text-gray-600">
+                        <span>- General Deductions:</span>
+                        <span id="summary-general-deductions" class="text-red-500">$0.00</span>
+                    </div>
+                    <div class="summary-item sub-item flex justify-between py-1 pl-6 text-base text-gray-600">
+                        <span>- WFH Deductions:</span>
+                        <span id="summary-wfh-deductions" class="text-red-500">$0.00</span>
+                    </div>
+                    <div class="summary-item sub-item flex justify-between py-1 pl-6 text-base text-gray-600 border-b pb-2">
+                        <span>- Super Deductions:</span>
+                        <span id="summary-super-deductions" class="text-red-500">$0.00</span>
+                    </div>
+                    <div class="summary-item flex justify-between py-2 border-b font-semibold">
+                        <span>Taxable Income:</span>
+                        <strong id="summary-taxable-income" class="text-blue-700">$0.00</strong>
+                    </div>
+                    <div class="summary-item flex justify-between py-2 border-b">
+                        <span>Gross Tax on Income:</span>
+                        <strong id="summary-gross-tax">$0.00</strong>
+                    </div>
+                    <div class="summary-item flex justify-between py-2 border-b">
+                        <span>Medicare Levy:</span>
+                        <strong id="summary-medicare-levy">$0.00</strong>
+                    </div>
+                    <div class="summary-item flex justify-between py-2 border-b">
+                        <span>Medicare Levy Surcharge:</span>
+                        <strong id="summary-mls">$0.00</strong>
+                    </div>
+                    <div class="summary-item flex justify-between py-2 border-b">
+                        <span>Total Tax Offsets:</span>
+                        <strong id="summary-tax-offsets" class="text-green-500">$0.00</strong>
+                    </div>
+                    <div id="summary-lito-offset-row" class="summary-item sub-item flex justify-between py-1 pl-6 text-base text-gray-600">
+                        <span>- LITO (applied):</span>
+                        <span id="summary-lito-offset" class="text-green-500">$0.00</span>
+                    </div>
+                    <div class="summary-item sub-item flex justify-between py-1 pl-6 text-base text-gray-600">
+                        <span>- Franking Credits:</span>
+                        <span id="summary-franking-credits-offset" class="text-green-500">$0.00</span>
+                    </div>
+                    <div class="summary-item sub-item flex justify-between py-1 pl-6 text-base text-gray-600 border-b pb-2">
+                        <span id="summary-phi-offset-label">- Private Health Insurance:</span>
+                        <span id="summary-phi-offset" class="text-green-500">$0.00</span>
+                    </div>
+                    <div class="summary-item flex justify-between py-2 border-b font-semibold">
+                        <span>Net Tax Payable:</span>
+                        <strong id="summary-net-tax" class="text-red-700">$0.00</strong>
+                    </div>
+                    <div class="summary-item flex justify-between py-2 border-b">
+                        <span>Tax Already Withheld (from PAYG):</span>
+                        <strong id="summary-tax-withheld" class="text-green-600">$0.00</strong>
+                    </div>
+                    <div class="summary-item final-outcome flex justify-between p-4 mt-4 text-2xl font-bold border-2 border-blue-500 rounded-lg bg-blue-50">
+                        <span>Estimated Tax Outcome:</span>
+                        <strong id="summary-final-outcome" class="text-blue-800">$0.00 (Refund)</strong>
+                    </div>
+                </div>
+                <button id="generate-summary-report-btn" class="mt-6 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition-colors w-full">Generate Printable Summary</button>
+            </section>
+        </div>
+
+        <div class="lg:col-span-2 space-y-6">
+            <div class="bg-white p-6 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold mb-4">Changelog</h3>
+                <div class="text-sm space-y-4">
+                    <div>
+                        <h4 class="font-semibold">Version 1.11.3</h4>
+                        <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> The browser tab title said "2024-2025" regardless of the selected year — it now follows the year selector. Also added a page description for search engines; there was none.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold">Version 1.11.2</h4>
+                        <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong class="font-medium text-green-600">Added:</strong> The WFH property modal now shows a live estimated deduction as you type, and its cost fields say which basis they want — electricity, gas and occupancy take the <em>full household bill</em> (the app applies the floor-area % automatically), internet takes the full bill (apportioned by its work %), and phone/stationery are claimed as entered. A user who entered an already-apportioned share had it apportioned a second time, silently cutting a whole year's claim by roughly $226.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold">Version 1.11.1</h4>
+                        <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> The WFH section failed to render — a scripting error introduced in v1.9.0 left the assets and property tables empty and the method stuck on "Not Selected". Summary totals were unaffected, but the whole section was unusable.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> A headless boot test that loads the real page and fails CI on any rendering error, so this class of defect cannot reach the deployed site silently again.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold">Version 1.11.0</h4>
+                        <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong class="font-medium text-green-600">Added:</strong> One-action group retag on the identical-assets warning card — if a flagged group is really a service (a subscription) or a consumable (printer filament), mark all of its items in one click instead of editing them one by one. Asks first, never changes deductions, and is reversible per item with the Asset Type selector.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold">Version 1.10.0</h4>
+                        <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> The identical-assets warning no longer fires on services and consumables — software subscriptions are consumed as paid, not held as assets, so the ATO's $300 test never applied to them. Items can now be tagged Equipment / Service / Consumable when added; existing data is unchanged and treated as equipment.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> Cross-year consistency audit. Because storage is per financial year, a depreciating asset is re-entered each year — the summary now shows a red card when copies of the same asset disagree across years (different cost, life, method, or list), and exports carry the detail.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> Each year of the depreciation schedule now shows the opening and closing written-down value alongside the claim — the figure an accountant carries forward, so any disagreement against a prepared schedule is self-diagnosing.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> A softer "worth checking" notice for same-day purchases that might form a set over $300 (the second limb of the $300 rule), worded as a question and kept separate from the identical-assets warning.</li>
+                            <li><strong class="font-medium text-yellow-600">Improved:</strong> The private health insurance inputs now make clear they take <em>your own share</em> from your own statement — each adult beneficiary gets a separate statement, and household totals distort the rebate offset.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold">Version 1.9.0</h4>
+                        <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong class="font-medium text-green-600">Added:</strong> Occupancy expenses (rent or mortgage interest) per WFH property period, apportioned by floor area — opt-in, with a caution that they're only deductible for employees in limited circumstances.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> ATO identical-assets review. When identical low-value items acquired in the year together cost more than $300 (e.g. 8 RAM modules at $224), the summary shows an amber review card and exports flag the group — the immediate deduction may not apply. Detection only; nothing is reclassified.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> ATO effective-life guidance beside every effective-life input (computers 4 yrs, laptops/tablets 2 yrs, network equipment 5 yrs) with a link to the ATO determination.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Prior-year items are no longer claimed again every financial year — immediate deductions (including depreciable-flagged items with a missing or zero effective life) are confined to the financial year of purchase, and on-screen table rows, CSV per-item rows and the totals now all apply the same rule. This was silently inflating deductions year after year.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> The depreciation schedule for a 0% work-use asset now shows $0.00 instead of a full-cost schedule, and depreciable items with a missing work-use percentage take the documented fallback instead of 0%.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> The summary's Total Offsets now reconciles with net tax (LITO shown as applied, capped at gross tax), net tax payable displays the true negative when refundable offsets exceed tax, and a negative PHI rebate offset renders as an amount owing rather than a green benefit.</li>
+                            <li><strong class="font-medium text-yellow-600">Improved:</strong> Malformed or impossible expense dates (e.g. 31 June) no longer crash the summary or roll into the wrong year; CSV cells are guarded against spreadsheet formula injection; the depreciation claim and displayed schedule share one calculation engine; each exported year's CSV is computed under that year's rates. Test suite grown to 332 tests.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold">Version 1.8.0</h4>
+                        <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong class="font-medium text-green-600">Added:</strong> Exports now include a per-year <em>Calculated Tax Summary</em> for your accountant — assessable income, deductions breakdown, taxable income, gross tax, Medicare levy, MLS, offsets, net tax, and the estimated refund/amount owing. CSV shows it at the top of each year; JSON carries it in a <code>calculatedSummaries</code> block.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> CSV expense and WFH-asset rows include a "Deduction This FY" column — for depreciable assets this is the actual claimable depreciation, not the purchase cost.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> A WFH asset saved with an explicit 0% work-use is no longer treated as 100% in the deduction calculation.</li>
+                            <li><strong class="font-medium text-yellow-600">Improved:</strong> Summary page and exports now share one calculation path (<code>calculateYearSummary</code>), so exported figures always match what the app displays. Test suite grown to 250 tests.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold">Version 1.7.0</h4>
+                        <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong class="font-medium text-green-600">Added:</strong> FY 2026-27 support — 15% bracket (down from 16%, legislated from 1 July 2026), indexed MLS thresholds ($105k/$123k/$164k single, $210k/$246k/$328k family), PHI rebate periods, and the confirmed 70c/hr WFH fixed rate.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> 2025-26 Medicare levy low-income thresholds updated per the March 2026 Budget (single $28,011, family $47,238, +$4,338 per child — retroactive to 1 July 2025). Previously the 2024-25 figures were applied.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Family Medicare levy phase-in upper limit now scales by $5,270/$5,423 per child (1.25× the lower adjustment) — families with children in the phase-in band were overcharged the flat 2% levy.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> PHI rebate tier now applies the same dependent-child threshold adjustment as the MLS, and fractional incomes at tier boundaries no longer fall back to the base rebate rate.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> LITO no longer offsets the Medicare levy (it is non-refundable and applies to income tax only); franking credits and the PHI offset are now fully refundable and can increase your refund.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Prime-cost depreciation stops once an asset is fully written off — prior-year assets no longer generate deductions forever, and the claim now matches the displayed schedule.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> An over-claimed PHI rebate (rebate received above entitlement) is now counted as a liability instead of being ignored.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> An explicit 0% work-use percentage is preserved instead of being coerced to 100%.</li>
+                            <li><strong class="font-medium text-yellow-600">Improved:</strong> Export All Years now includes stored data for years this version can't display yet, and import notifies you when such a year is saved.</li>
+                            <li><strong class="font-medium text-yellow-600">Improved:</strong> Medicare exemption pro-rata uses the actual days in the financial year (366 in leap FYs); tax-free threshold is derived from the active year's bracket table.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> Test suite grown to 243 tests (up from 205) covering the new year, thresholds, and regressions.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold">Version 1.6.0</h4>
+                        <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Depreciation pro-rata calculations now use actual days in the financial year (366 for leap years like 2023-24, 2027-28) instead of hardcoded 365.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> <code>calculatePhiOffset</code> no longer crashes when <code>taxpayerDetails</code> is <code>null</code> or <code>undefined</code>.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> XSS vulnerability — user-supplied text (property descriptions, expense names, dates, IDs) in tables is now HTML-escaped. Inline <code>onclick</code> handlers replaced with <code>addEventListener</code> to eliminate ID-injection vector.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> CSV import now skips dates that already exist, preventing accidental double-counting when re-importing the same file.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Internet work percentage input now clamped to 0–100% range (previously <code>parseInt</code> allowed values above 100).</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Optional chaining guard in storage migration prevents crash on malformed data missing <code>wfh.hoursLog</code>.</li>
+                            <li><strong class="font-medium text-yellow-600">Improved:</strong> Import pipeline now runs data migration per-year and loads through the full merge pipeline, ensuring all default fields are present in imported data.</li>
+                            <li><strong class="font-medium text-yellow-600">Improved:</strong> Legacy single-year imports now validate the financial year and reject unsupported years with a clear error message.</li>
+                            <li><strong class="font-medium text-yellow-600">Improved:</strong> Export warns when years with corrupted localStorage data are skipped during multi-year export.</li>
+                            <li><strong class="font-medium text-yellow-600">Improved:</strong> Fractional work percentages (e.g. 33.5%) are now preserved instead of truncated by <code>parseInt</code>.</li>
+                            <li><strong class="font-medium text-yellow-600">Improved:</strong> Clear All Data no longer writes empty defaults back to localStorage — the key is truly removed.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> 205-test Jest suite (up from 200) — new tests for null PHI offset, fractional work percentage, and updated leap-year diminishing value expectations.</li>
+                            <li><strong class="font-medium text-blue-600">Chore:</strong> Upgraded Jest from v29 to v30.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold">Version 1.5.4</h4>
+                        <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Removed debug <code>console.log</code> statements from WFH asset removal flow.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Date validation in depreciation calculations now rejects <code>null</code>, <code>undefined</code>, and malformed strings, preventing silent NaN deductions.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Depreciation schedule returns <code>"Invalid date"</code> (rather than blank) for assets with a missing or malformed purchase date.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Numeric form inputs (cost, work %, effective life) are clamped server-side — negative values can no longer bypass browser <code>min</code> attributes.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> WFH hours CSV import rejects dates outside 2000–2100 to prevent absurd date entries.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Manually logging WFH hours on an already-logged date now accumulates minutes on the existing entry rather than creating a duplicate row.</li>
+                            <li><strong class="font-medium text-yellow-600">Improved:</strong> JSON import error messages now distinguish parse errors from structural validation failures and include actionable guidance.</li>
+                            <li><strong class="font-medium text-yellow-600">Improved:</strong> <code>localStorage</code> quota exceeded is now detected and reported with a clear "export and clear old years" prompt.</li>
+                            <li><strong class="font-medium text-yellow-600">Improved:</strong> <code>StorageManager</code> notification callback is now configurable via <code>setNotifyCallback(fn)</code>, decoupling storage from UI for testability.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> 202-test Jest suite (up from 190) — new suites for multi-property WFH, date validation, and invalid-date schedule handling.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold">Version 1.5.3</h4>
+                        <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong class="font-medium text-green-600">Added:</strong> Multi-property support in WFH Actual Cost Method — add a separate period for each address when you move mid-year, each with its own floor area and running expenses. Totals are summed automatically.</li>
+                            <li><strong class="font-medium text-green-600">Improved:</strong> Depreciation schedule column now shows financial year labels (e.g. 2024-25, 2025-26) instead of Y1/Y2, bolds the current year's claim, and shows a pro-rata note on partial-year entries (e.g. "330/365 days · 100% DV/yr") explaining why the first year is less.</li>
+                            <li><strong class="font-medium text-green-600">Improved:</strong> Depreciation schedule now shows the residual balance year for assets with effectiveLife=1 purchased mid-year, so the carry-forward amount is visible.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> 190-test Jest suite (up from 187) with additional schedule label and highlight tests.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold">Version 1.5.2</h4>
+                        <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Critical — Diminishing value depreciation carry-forward (year 2+) was overclaiming significantly for assets purchased mid-year. The prior-year opening value now correctly pro-rates the acquisition year before rolling forward, matching ATO methodology.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Diminishing value for effectiveLife=1 assets was claiming 200% in Y1 (e.g. a $435 GPU showed $784 deduction). Deduction is now correctly capped at 100% of the written-down value.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> 187-test Jest suite with carry-forward regression tests covering real-world asset scenarios.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold">Version 1.5.1</h4>
+                        <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Critical — Medicare Levy family thresholds corrected to legislated 2024-25/2025-26 values ($45,907 lower / $57,383 upper / $4,216 child adjustment) per Treasury Laws Amendment (More Cost of Living Relief) Act 2025. Families with 2 dependent children on ~$50k income were incorrectly charged ~$154 in levy.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> PHI rebate period keys were hardcoded to 2024-25 strings, returning wrong rates for 2025-26. Keys are now resolved dynamically, making the calculation year-agnostic.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> 2025-26 PHI rebate rates updated to confirmed values per Dept of Health PHI Circulars 21/25 and 12/26.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> 2025-26 MLS tier caps corrected — single Tier 1 ($117k&rarr;$118k), Tier 2 ($155k&rarr;$158k); family Tier 1 ($234k&rarr;$236k), Tier 2 ($310k&rarr;$316k).</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> 183-test Jest unit test suite covering all calculation logic with &gt;99% statement coverage and CI integration via GitHub Actions.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold">Version 1.5.0</h4>
+                        <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong class="font-medium text-green-600">Added:</strong> Multi-year support with a year selector dropdown in the header. Users can switch between 2024-2025 and 2025-2026 (and future years) with independent data storage for each year.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> Automatic year detection on startup: saved preference &rarr; most recent year with data &rarr; latest available year.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> 2025-2026 tax configuration including updated MLS thresholds ($101,000 for singles, $202,000 for families).</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> Dynamic PHI period labels that update automatically based on the selected financial year.</li>
+                            <li><strong class="font-medium text-yellow-600">Refactored:</strong> <code>constants.js</code> restructured with year-keyed TAX_CONFIG object for easier maintenance. Added <code>loadConstantsForYear()</code> for dynamic constant loading.</li>
+                            <li><strong class="font-medium text-yellow-600">Refactored:</strong> <code>storage.js</code> with dynamic storage key generation and year detection functions (<code>getYearsWithData()</code>, <code>detectDefaultYear()</code>, <code>saveActiveYearPreference()</code>).</li>
+                            <li><strong class="font-medium text-yellow-600">Refactored:</strong> <code>app.js</code> deferred data loading to init() phase. Added year change event listener.</li>
+                            <li><strong class="font-medium text-yellow-600">Refactored:</strong> <code>ui.js</code> added <code>populateYearSelector()</code>, <code>updateFinancialYearDisplays()</code>, and <code>minutesToTimeString()</code> functions.</li>
+                            <li><strong class="font-medium text-yellow-600">Improved:</strong> Each financial year maintains completely independent data. Switching years preserves all data for each year.</li>
+                            <li><strong class="font-medium text-yellow-600">Improved:</strong> JSON imports now automatically switch to the year specified in the imported file. Export filenames include the current financial year.</li>
+                            <li><strong class="font-medium text-yellow-600">Improved:</strong> Clear data operation only affects the active financial year, preserving data in other years.</li>
+                            <li><strong class="font-medium text-blue-600">Backward Compatible:</strong> Storage keys preserved (<code>aussieTaxHelperData-2025</code> for 2024-25). All data migrations continue to work.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold">Version 1.4.1</h4>
+                        <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong class="font-medium text-yellow-600">Refactored:</strong> Centralized the depreciation schedule generation logic into a single reusable function to eliminate code duplication and improve maintainability.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Corrected a critical bug where the Medicare Levy for families was being calculated using the incorrect singles threshold. The calculation now accurately reflects family and dependent children adjustments.</li>
+                            <li><strong class="font-medium text-yellow-600">Improved:</strong> The Work-From-Home (WFH) fixed rate displayed in the UI is now dynamically populated from the central constants file, ensuring consistency and easier maintenance.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> Updated Private Health Insurance (PHI) calculations to support the two separate rebate rate periods for the 2024-2025 financial year.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> The UI now includes separate input fields for PHI premiums paid during the July-March and April-June periods.</li>
+                            <li><strong class="font-medium text-yellow-600">Improved:</strong> Enhanced data migration to ensure seamless backward compatibility for users upgrading from previous versions.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Resolved a critical JavaScript error that occurred on page load due to an incorrect variable reference.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Corrected a bug that prevented the new dual-period PHI premium data from being included in CSV exports.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold">Version 1.4.0</h4>
+                        <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong class="font-medium text-green-600">A special thanks to Anachronism59 for your detailed feedback and persistence in identifying the bugs. Your keen eye was crucial in making this version more robust and accurate.</strong></li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> Edit functionality for PAYG and general expense entries.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> WFH Hours CSV Import.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> now support partial medicare exempt days</li>
+                            <li><strong class="font-medium text-green-600">Improved:</strong> WFH hours now calculated with higher accuracy and displayed in HH:MM format.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> MLS calculation now correctly includes personal super contributions.</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Critical bug in Diminishing Value depreciation for 1-year assets.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold">Version 1.3.0</h4>
+                        <ul class="list-disc pl-5 mt-1 space-y-1">
+                             <li><strong class="font-medium text-green-600">Added:</strong> Private Health Insurance (PHI) tax offset calculation.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> New expense categories: "Gifts & Donations," "Cost of Managing Tax Affairs," and "Income Protection Insurance."</li>
+                            <li><strong class="font-medium text-red-600">Fixed:</strong> Depreciation calculation for "Diminishing Value" method now correctly uses the written-down value.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold">Version 1.2.0</h4>
+                         <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong class="font-medium text-green-600">Added:</strong> Choice between "Prime Cost" and "Diminishing Value" depreciation methods.</li>
+                             <li><strong class="font-medium text-green-600">Added:</strong> Inputs for "Deductible Personal Super Contributions" and "Net Capital Gains."</li>
+                        </ul>
+                    </div>
+                     <div>
+                        <h4 class="font-semibold">Version 1.1.0</h4>
+                         <ul class="list-disc pl-5 mt-1 space-y-1">
+                            <li><strong class="font-medium text-green-600">Added:</strong> Accurate Medicare Levy Surcharge (MLS) calculations for "Single" and "Family" statuses.</li>
+                            <li><strong class="font-medium text-green-600">Added:</strong> Advanced taxpayer details for more complex scenarios.</li>
+                             <li><strong class="font-medium text-yellow-600">Improved:</strong> Mobile navigation is now horizontally scrollable.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="bg-gray-800 text-gray-300 p-6 mt-8 text-center text-sm">
+        <div class="data-management mb-4 flex justify-center items-center flex-wrap gap-2">
+            <select id="exportScopeSelect" class="bg-gray-700 hover:bg-gray-600 text-white px-2 py-1.5 rounded-md text-xs border border-gray-500 cursor-pointer">
+                <option value="all" selected>All Years</option>
+                <option value="current">Current Year Only</option>
+            </select>
+            <button id="exportDataBtn" class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1.5 rounded-md text-xs">Export (JSON)</button>
+            <button id="exportCsvDataBtn" class="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1.5 rounded-md text-xs">Export (CSV)</button>
+            <label for="importDataInput" class="button-like-label bg-gray-600 hover:bg-gray-700 text-xs">Import Data (JSON)</label>
+            <input type="file" id="importDataInput" accept=".json" class="hidden">
+            <button id="clearAllDataBtn" class="bg-red-700 hover:bg-red-800 text-white px-3 py-1.5 rounded-md text-xs">Clear All Data (from this browser)</button>
+        </div>
+        <p class="mb-1">All data is stored locally in your browser. Clearing browser data for this site will erase your records. Export your data for backup.</p>
+        <p class="mb-1">This tool provides an estimate only for the <span class="financialYearDisplay font-semibold"></span> financial year and is not professional tax advice.</p>
+        
+        <p>
+            Always verify current ATO rates from <a href="https://www.ato.gov.au" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline">ato.gov.au</a>. | 
+            <a href="https://github.com/vectorwren/taxcalc-au" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline">View Code & Contribute on GitHub</a>
+        </p>
+    </footer>
+
+    <div id="app-modal" class="modal-backdrop">
+        <div class="modal-content">
+            <h3 id="modal-title" class="text-xl font-semibold text-gray-800">Notification</h3>
+            <p id="modal-message" class="mt-2 text-gray-600">This is a message.</p>
+            <div class="modal-buttons">
+                <button id="modal-confirm-btn" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">OK</button>
+                <button id="modal-cancel-btn" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="wfh-asset-modal" class="modal-backdrop">
+        <div class="modal-content">
+            <h3 id="wfh-asset-modal-title" class="text-xl font-semibold text-gray-800 mb-4">Add WFH Asset</h3>
+            <form id="wfh-asset-form">
+                <input type="hidden" id="wfh-asset-id">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="md:col-span-2">
+                        <label for="wfh-asset-description" class="block text-sm font-medium text-gray-700">Description:</label>
+                        <input type="text" id="wfh-asset-description" name="wfh-asset-description" required>
+                    </div>
+                    <div>
+                        <label for="wfh-asset-date" class="block text-sm font-medium text-gray-700">Date of Purchase:</label>
+                        <input type="date" id="wfh-asset-date" name="wfh-asset-date" required>
+                    </div>
+                    <div>
+                        <label for="wfh-asset-cost" class="block text-sm font-medium text-gray-700">Cost ($):</label>
+                        <input type="number" id="wfh-asset-cost" name="wfh-asset-cost" step="0.01" min="0" required>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label for="wfh-asset-work-percentage" class="block text-sm font-medium text-gray-700">Work-Related Use (%):</label>
+                        <input type="number" id="wfh-asset-work-percentage" name="wfh-asset-work-percentage" min="0" max="100" value="100" step="1">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label for="wfh-asset-asset-type" class="block text-sm font-medium text-gray-700">Asset Type:</label>
+                        <select id="wfh-asset-asset-type" name="wfh-asset-asset-type">
+                            <option value="equipment" selected>Equipment (physical asset)</option>
+                            <option value="service">Service (subscription, support plan)</option>
+                            <option value="consumable">Consumable (used up, e.g. toner)</option>
+                        </select>
+                        <p class="tooltip-text mt-1">Services and consumables are deducted in full when paid — the ATO's $300 asset tests don't apply to them.</p>
+                    </div>
+                    <div class="md:col-span-2 flex items-center space-x-2">
+                        <input type="checkbox" id="wfh-asset-is-depreciable" name="wfh-asset-is-depreciable" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                        <label for="wfh-asset-is-depreciable" class="text-sm font-medium text-gray-700">Is this a depreciable asset (cost > $300 and lasts > 1 year)?</label>
+                    </div>
+                </div>
+                <div id="wfh-asset-depreciation-fields" class="hidden mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="wfh-asset-effective-life" class="block text-sm font-medium text-gray-700">Effective Life (Years):</label>
+                        <input type="number" id="wfh-asset-effective-life" name="wfh-asset-effective-life" step="1" min="1">
+                        <p class="tooltip-text mt-1">
+                            Common ATO effective lives: computers &amp; computer equipment 4 years; laptops, tablets &amp; other portable computers 2 years;
+                            mainframe &amp; network equipment 5 years. See the
+                            <a href="https://www.ato.gov.au/businesses-and-organisations/income-deductions-and-concessions/depreciation-and-capital-expenses-and-allowances/general-depreciation-rules-capital-allowances/effective-life-of-an-asset" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">ATO effective-life determination</a>.
+                        </p>
+                    </div>
+                    <div>
+                        <label for="wfh-asset-depreciation-method" class="block text-sm font-medium text-gray-700">Depreciation Method:</label>
+                        <select id="wfh-asset-depreciation-method" name="wfh-asset-depreciation-method">
+                            <option value="prime_cost">Prime Cost</option>
+                            <option value="diminishing_value">Diminishing Value</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-buttons">
+                    <button id="wfh-asset-cancel-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
+                    <button id="wfh-asset-save-btn" type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Save Asset</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="wfh-property-modal" class="modal-backdrop">
+        <div class="modal-content max-w-2xl">
+            <h3 id="wfh-property-modal-title" class="text-xl font-semibold text-gray-800 mb-4">Add Property Period</h3>
+            <form id="wfh-property-form">
+                <input type="hidden" id="wfh-property-id">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="md:col-span-2">
+                        <label for="wfh-property-description" class="block text-sm font-medium text-gray-700">Description (optional, e.g. address):</label>
+                        <input type="text" id="wfh-property-description" name="wfh-property-description" placeholder="e.g. 123 Main St, Sydney" class="mt-1">
+                    </div>
+                    <div>
+                        <label for="wfh-property-from-date" class="block text-sm font-medium text-gray-700">From Date:</label>
+                        <input type="date" id="wfh-property-from-date" name="wfh-property-from-date" class="mt-1">
+                    </div>
+                    <div>
+                        <label for="wfh-property-to-date" class="block text-sm font-medium text-gray-700">To Date:</label>
+                        <input type="date" id="wfh-property-to-date" name="wfh-property-to-date" class="mt-1">
+                    </div>
+                    <div>
+                        <label for="wfh-property-office-area" class="block text-sm font-medium text-gray-700">Dedicated Office Area (m²):</label>
+                        <input type="number" id="wfh-property-office-area" name="wfh-property-office-area" step="0.01" min="0" class="mt-1">
+                    </div>
+                    <div>
+                        <label for="wfh-property-total-home-area" class="block text-sm font-medium text-gray-700">Total Home Area (m²):</label>
+                        <input type="number" id="wfh-property-total-home-area" name="wfh-property-total-home-area" step="0.01" min="0" class="mt-1">
+                    </div>
+                    <div class="md:col-span-2">
+                        <p class="text-sm">Floor Area %: <strong id="wfh-property-floor-pct" class="text-purple-700">0.00%</strong></p>
+                    </div>
+                    <div>
+                        <label for="wfh-property-electricity" class="block text-sm font-medium text-gray-700">Electricity Cost for period ($):</label>
+                        <input type="number" id="wfh-property-electricity" step="0.01" min="0" class="mt-1">
+                        <p class="tooltip-text mt-1">The full household bill — the app applies the floor-area % automatically.</p>
+                    </div>
+                    <div>
+                        <label for="wfh-property-gas" class="block text-sm font-medium text-gray-700">Gas Cost for period ($):</label>
+                        <input type="number" id="wfh-property-gas" step="0.01" min="0" class="mt-1">
+                        <p class="tooltip-text mt-1">The full household bill — the app applies the floor-area % automatically.</p>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label for="wfh-property-occupancy" class="block text-sm font-medium text-gray-700">Occupancy Costs for period ($) — rent or mortgage interest:</label>
+                        <input type="number" id="wfh-property-occupancy" step="0.01" min="0" class="mt-1">
+                        <p class="tooltip-text mt-1">
+                            <strong>Caution:</strong> occupancy expenses are only deductible for employees in limited circumstances (e.g. a home that is a place of business, not just a home office). Leave blank unless you've confirmed eligibility with the ATO or your agent — the amount is apportioned by the floor-area percentage above.
+                        </p>
+                        <p class="tooltip-text mt-1">The full household rent or mortgage interest for the period — the app applies the floor-area % automatically.</p>
+                    </div>
+                    <div>
+                        <label for="wfh-property-internet" class="block text-sm font-medium text-gray-700">Internet Cost for period ($):</label>
+                        <input type="number" id="wfh-property-internet" step="0.01" min="0" class="mt-1">
+                        <p class="tooltip-text mt-1">The full bill — the Internet Work % below apportions it.</p>
+                    </div>
+                    <div>
+                        <label for="wfh-property-internet-work-pct" class="block text-sm font-medium text-gray-700">Internet Work %:</label>
+                        <input type="number" id="wfh-property-internet-work-pct" min="0" max="100" class="mt-1">
+                    </div>
+                    <div>
+                        <label for="wfh-property-phone" class="block text-sm font-medium text-gray-700">Work-Related Phone Costs ($):</label>
+                        <input type="number" id="wfh-property-phone" step="0.01" min="0" class="mt-1">
+                        <p class="tooltip-text mt-1">Your work-related portion, claimed as entered.</p>
+                    </div>
+                    <div>
+                        <label for="wfh-property-stationery" class="block text-sm font-medium text-gray-700">Stationery & Consumables ($):</label>
+                        <input type="number" id="wfh-property-stationery" step="0.01" min="0" class="mt-1">
+                        <p class="tooltip-text mt-1">Your work-related portion, claimed as entered.</p>
+                    </div>
+                </div>
+                <div class="md:col-span-2">
+                    <p class="text-sm">Estimated deduction for this period: <strong id="wfh-property-preview" class="text-purple-700">$0.00</strong>
+                        <span class="tooltip-text">— live preview of the running-expenses claim from the values above.</span></p>
+                </div>
+                <div class="flex justify-end gap-3 mt-6">
+                    <button id="wfh-property-cancel-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
+                    <button id="wfh-property-save-btn" type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Save Property Period</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="edit-payg-modal" class="modal-backdrop">
+        <div class="modal-content">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Edit PAYG Income</h3>
+            <form id="edit-payg-form">
+                <input type="hidden" id="edit-payg-id">
+                <div class="space-y-3">
+                    <div>
+                        <label for="edit-income-source-name" class="block text-sm font-medium text-gray-700">Employer/Payer Name:</label>
+                        <input type="text" id="edit-income-source-name" name="edit-income-source-name" required>
+                    </div>
+                    <div>
+                        <label for="edit-gross-salary" class="block text-sm font-medium text-gray-700">Gross Salary/Wages ($):</label>
+                        <input type="number" id="edit-gross-salary" name="edit-gross-salary" step="0.01" min="0" required>
+                    </div>
+                    <div>
+                        <label for="edit-tax-withheld" class="block text-sm font-medium text-gray-700">Total Tax Withheld ($):</label>
+                        <input type="number" id="edit-tax-withheld" name="edit-tax-withheld" step="0.01" min="0" required>
+                    </div>
+                </div>
+                <div class="modal-buttons">
+                    <button id="edit-payg-cancel-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
+                    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="edit-expense-modal" class="modal-backdrop">
+        <div class="modal-content">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Edit General Expense</h3>
+            <form id="edit-expense-form">
+                <input type="hidden" id="edit-expense-id">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                    <div>
+                        <label for="edit-expense-description" class="block text-sm font-medium text-gray-700">Description:</label>
+                        <input type="text" id="edit-expense-description" name="edit-expense-description" required>
+                    </div>
+                    <div>
+                        <label for="edit-expense-date" class="block text-sm font-medium text-gray-700">Date of Purchase:</label>
+                        <input type="date" id="edit-expense-date" name="edit-expense-date" required>
+                    </div>
+                    <div>
+                        <label for="edit-expense-cost" class="block text-sm font-medium text-gray-700">Cost ($):</label>
+                        <input type="number" id="edit-expense-cost" name="edit-expense-cost" step="0.01" min="0" required>
+                    </div>
+                    <div>
+                        <label for="edit-expense-category" class="block text-sm font-medium text-gray-700">Category:</label>
+                        <select id="edit-expense-category" name="edit-expense-category">
+                            <option value="tools">Tools & Equipment</option>
+                            <option value="education">Self-Education</option>
+                            <option value="travel">Work-Related Travel</option>
+                            <option value="uniform">Uniform/Protective Clothing</option>
+                            <option value="income_protection">Income Protection Insurance</option>
+                            <option value="tax_affairs">Cost of Managing Tax Affairs</option>
+                            <option value="donations">Gifts & Donations</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label for="edit-expense-work-percentage" class="block text-sm font-medium text-gray-700">Work-Related Use (%):</label>
+                        <input type="number" id="edit-expense-work-percentage" name="edit-expense-work-percentage" min="0" max="100" step="1">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label for="edit-expense-asset-type" class="block text-sm font-medium text-gray-700">Asset Type:</label>
+                        <select id="edit-expense-asset-type" name="edit-expense-asset-type">
+                            <option value="equipment" selected>Equipment (physical asset)</option>
+                            <option value="service">Service (subscription, support plan)</option>
+                            <option value="consumable">Consumable (used up, e.g. toner)</option>
+                        </select>
+                        <p class="tooltip-text mt-1">Services and consumables are deducted in full when paid — the ATO's $300 asset tests don't apply to them.</p>
+                    </div>
+                    <div class="md:col-span-2 flex items-center space-x-2">
+                        <input type="checkbox" id="edit-expense-is-depreciable" name="edit-expense-is-depreciable" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                        <label for="edit-expense-is-depreciable" class="text-sm font-medium text-gray-700">Is this a depreciable asset?</label>
+                    </div>
+                </div>
+                <div id="edit-depreciation-fields" class="hidden mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="edit-expense-effective-life" class="block text-sm font-medium text-gray-700">Effective Life (Years):</label>
+                        <input type="number" id="edit-expense-effective-life" name="edit-expense-effective-life" step="1" min="1">
+                        <p class="tooltip-text mt-1">
+                            Common ATO effective lives: computers &amp; computer equipment 4 years; laptops, tablets &amp; other portable computers 2 years;
+                            mainframe &amp; network equipment 5 years. See the
+                            <a href="https://www.ato.gov.au/businesses-and-organisations/income-deductions-and-concessions/depreciation-and-capital-expenses-and-allowances/general-depreciation-rules-capital-allowances/effective-life-of-an-asset" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">ATO effective-life determination</a>.
+                        </p>
+                    </div>
+                    <div>
+                        <label for="edit-depreciation-method" class="block text-sm font-medium text-gray-700">Depreciation Method:</label>
+                        <select id="edit-depreciation-method" name="edit-depreciation-method">
+                            <option value="prime_cost">Prime Cost</option>
+                            <option value="diminishing_value">Diminishing Value</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-buttons">
+                    <button id="edit-expense-cancel-btn" type="button" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-300">Cancel</button>
+                    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
+    <script src="js/constants.js"></script>
+    <script src="js/calculations.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,642 @@
+// js/ui.js
+const UIManager = (() => {
+    // --- Modal Logic ---
+    const modal = document.getElementById('app-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalMessage = document.getElementById('modal-message');
+    const confirmBtn = document.getElementById('modal-confirm-btn');
+    const cancelBtn = document.getElementById('modal-cancel-btn');
+    let confirmCallback = null;
+    const wfhAssetModal = document.getElementById('wfh-asset-modal');
+    const editPaygModal = document.getElementById('edit-payg-modal');
+    const editExpenseModal = document.getElementById('edit-expense-modal');
+    const showModal = (title, message, showCancel = false, onConfirm = null) => {
+        modalTitle.textContent = title;
+        modalMessage.textContent = message;
+        confirmCallback = onConfirm;
+        cancelBtn.style.display = showCancel ? 'inline-block' : 'none';
+        modal.classList.add('visible');
+    };
+    const hideModal = () => modal.classList.remove('visible');
+    confirmBtn.addEventListener('click', () => {
+        if (confirmCallback) {
+            confirmCallback();
+            confirmCallback = null;
+        }
+        hideModal();
+    });
+    cancelBtn.addEventListener('click', hideModal);
+    const showNotification = (message, onConfirm = null) => showModal('Notification', message, false, onConfirm);
+    const showConfirmation = (message, onConfirm) => showModal('Confirmation', message, true, onConfirm);
+
+    const showWfhAssetModal = (asset = null) => {
+        const form = document.getElementById('wfh-asset-form');
+        const modalTitle = document.getElementById('wfh-asset-modal-title');
+        form.reset();
+        document.getElementById('wfh-asset-depreciation-fields').classList.add('hidden');
+
+        if (asset) {
+            modalTitle.textContent = 'Edit WFH Asset';
+            form['wfh-asset-id'].value = asset.id;
+            form['wfh-asset-description'].value = asset.description;
+            form['wfh-asset-date'].value = asset.date;
+            form['wfh-asset-cost'].value = asset.cost;
+            form['wfh-asset-work-percentage'].value = asset.workPercentage || 100;
+            form['wfh-asset-asset-type'].value = asset.assetType || 'equipment';
+            form['wfh-asset-is-depreciable'].checked = asset.isDepreciable;
+
+            if (asset.isDepreciable) {
+                document.getElementById('wfh-asset-depreciation-fields').classList.remove('hidden');
+                form['wfh-asset-effective-life'].value = asset.effectiveLife;
+                form['wfh-asset-depreciation-method'].value = asset.depreciationMethod;
+            }
+        } else {
+            modalTitle.textContent = 'Add WFH Asset';
+            form['wfh-asset-id'].value = '';
+        }
+
+        wfhAssetModal.classList.add('visible');
+    };
+    const hideWfhAssetModal = () => wfhAssetModal.classList.remove('visible');
+
+    const showEditPaygModal = (incomeItem) => {
+        const form = document.getElementById('edit-payg-form');
+        form['edit-payg-id'].value = incomeItem.id;
+        form['edit-income-source-name'].value = incomeItem.sourceName;
+        form['edit-gross-salary'].value = incomeItem.grossSalary;
+        form['edit-tax-withheld'].value = incomeItem.taxWithheld;
+        editPaygModal.classList.add('visible');
+    };
+    const hideEditPaygModal = () => editPaygModal.classList.remove('visible');
+
+    const showEditExpenseModal = (expenseItem) => {
+        const form = document.getElementById('edit-expense-form');
+        form['edit-expense-id'].value = expenseItem.id;
+        form['edit-expense-description'].value = expenseItem.description;
+        form['edit-expense-date'].value = expenseItem.date;
+        form['edit-expense-cost'].value = expenseItem.cost;
+        form['edit-expense-category'].value = expenseItem.category;
+        form['edit-expense-work-percentage'].value = expenseItem.workPercentage;
+        form['edit-expense-asset-type'].value = expenseItem.assetType || 'equipment';
+        form['edit-expense-is-depreciable'].checked = expenseItem.isDepreciable;
+        document.getElementById('edit-depreciation-fields').classList.toggle('hidden', !expenseItem.isDepreciable);
+        if (expenseItem.isDepreciable) {
+            form['edit-expense-effective-life'].value = expenseItem.effectiveLife;
+            form['edit-depreciation-method'].value = expenseItem.depreciationMethod;
+        }
+        editExpenseModal.classList.add('visible');
+    };
+    const hideEditExpenseModal = () => editExpenseModal.classList.remove('visible');
+
+    const flashHighlight = (elementId) => {
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.classList.add('flash-highlight');
+            setTimeout(() => {
+                element.classList.remove('flash-highlight');
+            }, 1200);
+        }
+    };
+
+    const formatCurrency = (amount) => (amount || 0).toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
+
+    const showSection = (sectionId) => {
+        document.querySelectorAll('.app-section').forEach(section => section.classList.remove('active-section'));
+        const sectionToShow = document.getElementById(sectionId);
+        if (sectionToShow) sectionToShow.classList.add('active-section');
+        document.querySelectorAll('.nav-button').forEach(button => {
+            button.classList.toggle('active', button.dataset.section === sectionId);
+        });
+    };
+
+    const toggleFamilyFields = (isFamily) => {
+        document.getElementById('family-fields').classList.toggle('hidden', !isFamily);
+    };
+
+    const toggleMedicareDaysField = (isExempt) => {
+        document.getElementById('medicare-exempt-days-container').classList.toggle('hidden', !isExempt);
+    };
+
+    const minutesToTimeString = (totalMinutes) => {
+        if (isNaN(totalMinutes) || totalMinutes < 0) return '00:00';
+        const hours = Math.floor(totalMinutes / 60);
+        const mins = Math.round(totalMinutes % 60);
+        return `${hours}:${String(mins).padStart(2, '0')}`;
+    };
+
+    const populateYearSelector = (activeYear) => {
+        const selector = document.getElementById('financial-year-selector');
+        if (!selector) return;
+
+        const today = new Date();
+        const m = today.getMonth();
+        const y = today.getFullYear();
+        const currentFY = `${m >= 6 ? y : y - 1}-${m >= 6 ? y + 1 : y}`;
+
+        selector.innerHTML = '';
+        window.AVAILABLE_YEARS.forEach(year => {
+            const option = document.createElement('option');
+            option.value = year;
+            option.textContent = year === currentFY ? `${year} (current)` : year;
+            if (year === activeYear) {
+                option.selected = true;
+            }
+            selector.appendChild(option);
+        });
+
+        updateFinancialYearDisplays(activeYear);
+    };
+
+    const updateFinancialYearDisplays = (year) => {
+        // Update all .financialYearDisplay elements
+        document.querySelectorAll('.financialYearDisplay').forEach(el => {
+            el.textContent = year;
+        });
+
+        // Keep the tab title on the selected year — it hardwired "2024-2025"
+        // for two years after multi-year support landed.
+        document.title = `TaxCalc AU (${year})`;
+
+        // Optionally update PHI period labels
+        const phiPeriods = Object.keys(window.PHI_REBATE_RATES_PERIODS || {});
+        const period1Label = document.getElementById('phi-period1-label');
+        const period2Label = document.getElementById('phi-period2-label');
+
+        if (phiPeriods.length >= 2 && period1Label && period2Label) {
+            // Parse the period keys to get readable dates
+            const formatPeriod = (key) => {
+                const [start, end] = key.split('_');
+                const formatDate = (dateStr) => {
+                    const [y, m, d] = dateStr.split('-');
+                    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                    return `${months[parseInt(m) - 1]} ${y.substring(2)}`;
+                };
+                return `${formatDate(start)} - ${formatDate(end)}`;
+            };
+
+            period1Label.textContent = `Premiums Paid (${formatPeriod(phiPeriods[0])}):`;
+            period2Label.textContent = `Premiums Paid (${formatPeriod(phiPeriods[1])}):`;
+        }
+    };
+
+    const populateTaxpayerDetailsForm = (details) => {
+        const form = document.getElementById('taxpayer-details-form');
+        form['medicare-exempt'].checked = details.isMedicareExempt;
+        form['medicare-exempt-days'].value = details.medicareExemptDays || 0;
+        form['private-cover'].checked = details.hasPrivateHospitalCover;
+        form['rfb-amount'].value = details.reportableFringeBenefits || '';
+        form['personal-super-contribution'].value = details.personalSuperContribution || '';
+        form['filing-status'].value = details.filingStatus || 'single';
+        form['spouse-income'].value = details.spouseIncome || '';
+        form['dependent-children'].value = details.dependentChildren || '';
+        form['phi-age-bracket'].value = details.phiAgeBracket || 'under65';
+        form['phi-premiums-paid-period1'].value = details.phiPremiumsPaid_period1 || '';
+        form['phi-premiums-paid-period2'].value = details.phiPremiumsPaid_period2 || '';
+        form['phi-rebate-received'].value = details.phiRebateReceived || '';
+        toggleFamilyFields(details.filingStatus === 'family');
+        toggleMedicareDaysField(details.isMedicareExempt);
+    };
+
+    const populateOtherIncomeForm = (otherIncome) => {
+        const form = document.getElementById('other-income-form');
+        form['bank-interest'].value = otherIncome.bankInterest || '';
+        form['net-capital-gains'].value = otherIncome.netCapitalGains || '';
+        form['dividends-unfranked'].value = otherIncome.dividendsUnfranked || '';
+        form['dividends-franked'].value = otherIncome.dividendsFranked || '';
+        form['franking-credits'].value = otherIncome.frankingCredits || '';
+    };
+
+    const displayWfhPropertiesList = (properties) => {
+        const listEl = document.getElementById('wfh-properties-list-body');
+        listEl.innerHTML = '';
+        if (!properties || properties.length === 0) {
+            listEl.innerHTML = '<tr><td colspan="7" class="text-center text-gray-400 py-2">No property periods added yet. Add one below.</td></tr>';
+            document.getElementById('wfh-running-expenses-subtotal').textContent = formatCurrency(0);
+            return;
+        }
+        let runningTotal = 0;
+        properties.forEach((prop, index) => {
+            const deduction = TaxCalculations.calculateWfhRunningExpensesDeduction(prop);
+            runningTotal += deduction;
+            const floorPct = (prop.officeArea > 0 && prop.totalHomeArea > 0)
+                ? ((prop.officeArea / prop.totalHomeArea) * 100).toFixed(1) + '%'
+                : '—';
+            const period = (prop.fromDate && prop.toDate)
+                ? `${prop.fromDate} → ${prop.toDate}`
+                : prop.fromDate || prop.toDate || '—';
+            const desc = prop.description || `Property ${index + 1}`;
+            const esc = TaxCalculations.escapeHtml;
+            const row = listEl.insertRow();
+            row.innerHTML = `
+                <td class="p-2 border-b border-gray-200 text-sm font-semibold">${index + 1}</td>
+                <td class="p-2 border-b border-gray-200 text-sm">${esc(desc)}</td>
+                <td class="p-2 border-b border-gray-200 text-sm text-gray-600">${esc(period)}</td>
+                <td class="p-2 border-b border-gray-200 text-sm">${prop.officeArea || 0}m² / ${prop.totalHomeArea || 0}m²</td>
+                <td class="p-2 border-b border-gray-200 text-sm">${floorPct}</td>
+                <td class="p-2 border-b border-gray-200 text-sm font-semibold">${formatCurrency(deduction)}</td>
+                <td class="p-2 border-b border-gray-200 text-sm">
+                    <button class="text-blue-500 hover:text-blue-700 text-xs font-semibold mr-2" data-prop-id="${esc(prop.id)}" data-action="edit">Edit</button>
+                    <button class="text-red-500 hover:text-red-700 text-xs font-semibold" data-prop-id="${esc(prop.id)}" data-action="remove">Remove</button>
+                </td>
+            `;
+            row.querySelectorAll('[data-action="edit"]').forEach(btn =>
+                btn.addEventListener('click', () => App.editWfhProperty(btn.dataset.propId)));
+            row.querySelectorAll('[data-action="remove"]').forEach(btn =>
+                btn.addEventListener('click', () => App.removeWfhProperty(btn.dataset.propId)));
+        });
+        document.getElementById('wfh-running-expenses-subtotal').textContent = formatCurrency(runningTotal);
+    };
+
+    const showWfhPropertyModal = (property = null) => {
+        const modal = document.getElementById('wfh-property-modal');
+        const form = document.getElementById('wfh-property-form');
+        const title = document.getElementById('wfh-property-modal-title');
+        form.reset();
+        document.getElementById('wfh-property-floor-pct').textContent = '0.00%';
+        document.getElementById('wfh-property-preview').textContent =
+            (0).toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
+        if (property) {
+            title.textContent = 'Edit Property Period';
+            document.getElementById('wfh-property-id').value = property.id;
+            document.getElementById('wfh-property-description').value = property.description || '';
+            document.getElementById('wfh-property-from-date').value = property.fromDate || '';
+            document.getElementById('wfh-property-to-date').value = property.toDate || '';
+            document.getElementById('wfh-property-office-area').value = property.officeArea || '';
+            document.getElementById('wfh-property-total-home-area').value = property.totalHomeArea || '';
+            document.getElementById('wfh-property-electricity').value = property.electricityCost || '';
+            document.getElementById('wfh-property-gas').value = property.gasCost || '';
+            document.getElementById('wfh-property-occupancy').value = property.occupancyCost || '';
+            document.getElementById('wfh-property-internet').value = property.internetCost || '';
+            document.getElementById('wfh-property-internet-work-pct').value = property.internetWorkPercent || '';
+            document.getElementById('wfh-property-phone').value = property.phoneCost || '';
+            document.getElementById('wfh-property-stationery').value = property.stationeryCost || '';
+            // Refresh floor % and the deduction preview from the prefilled
+            // values — one shared updater, no duplicated arithmetic here.
+            if (typeof App !== 'undefined' && App.updateWfhPropertyPreview) App.updateWfhPropertyPreview();
+        } else {
+            title.textContent = 'Add Property Period';
+            document.getElementById('wfh-property-id').value = '';
+        }
+        modal.classList.add('visible');
+    };
+
+    const hideWfhPropertyModal = () => {
+        document.getElementById('wfh-property-modal').classList.remove('visible');
+        document.getElementById('wfh-property-form').reset();
+    };
+
+    const updateRunningExpensesSubtotal = (properties) => {
+        const total = (properties || []).reduce((sum, prop) =>
+            sum + TaxCalculations.calculateWfhRunningExpensesDeduction(prop), 0);
+        document.getElementById('wfh-running-expenses-subtotal').textContent = formatCurrency(total);
+    };
+
+    const displayIncomeList = (paygItems, otherIncome) => {
+        const listEl = document.getElementById('income-list');
+        listEl.innerHTML = '';
+        let hasIncome = false;
+        paygItems.forEach(item => {
+            hasIncome = true;
+            const row = listEl.insertRow();
+            const cell = (text, cls = 'p-2 border-b border-gray-200') => {
+                const td = document.createElement('td');
+                td.className = cls;
+                td.textContent = text;
+                return td;
+            };
+            row.appendChild(cell(item.sourceName));
+            row.appendChild(cell(formatCurrency(item.grossSalary)));
+            row.appendChild(cell(formatCurrency(item.taxWithheld)));
+            const actions = document.createElement('td');
+            actions.className = 'p-2 border-b border-gray-200';
+            const editBtn = document.createElement('button');
+            editBtn.className = 'text-blue-500 hover:text-blue-700 text-xs font-semibold mr-2';
+            editBtn.textContent = 'Edit';
+            editBtn.addEventListener('click', () => App.editPaygIncome(item.id));
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'text-red-500 hover:text-red-700 text-xs font-semibold';
+            removeBtn.textContent = 'Remove';
+            removeBtn.addEventListener('click', () => App.removePaygIncome(item.id));
+            actions.appendChild(editBtn);
+            actions.appendChild(removeBtn);
+            row.appendChild(actions);
+        });
+        const otherIncomeTotal = (otherIncome.bankInterest || 0) + (otherIncome.dividendsUnfranked || 0) + (otherIncome.dividendsFranked || 0) + (otherIncome.netCapitalGains || 0);
+        if(otherIncomeTotal > 0 || (otherIncome.frankingCredits || 0) > 0){
+            hasIncome = true;
+            const row = listEl.insertRow();
+            row.className = 'bg-gray-50';
+            row.innerHTML = `<td class="p-2 border-b border-gray-200 italic">Other Income (Interest, Dividends, etc.)</td><td class="p-2 border-b border-gray-200 italic">${formatCurrency(otherIncomeTotal)}</td><td class="p-2 border-b border-gray-200 italic">${formatCurrency(otherIncome.frankingCredits)} (Credits)</td><td class="p-2 border-b border-gray-200"></td>`;
+        }
+        if (!hasIncome) listEl.innerHTML = '<tr><td colspan="4" class="text-center text-gray-500 py-4">No income added yet.</td></tr>';
+    };
+
+    const displayGeneralExpensesList = (expenses) => {
+        const listEl = document.getElementById('general-expenses-list');
+        listEl.innerHTML = '';
+        if (expenses.length === 0) {
+            listEl.innerHTML = '<tr><td colspan="8" class="text-center text-gray-500 py-4">No general expenses added yet.</td></tr>';
+            return;
+        }
+        [...expenses].sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(exp => {
+            // Same gate as the section totals, so the rows always sum to the
+            // total displayed above them (prior-year immediate items show 0).
+            const deduction = TaxCalculations.calculateItemDeductionThisFY(exp, 0);
+
+            const claimScheduleHtml = TaxCalculations.generateDepreciationSchedule(exp);
+            const methodDisplay = exp.isDepreciable ? (exp.depreciationMethod === 'prime_cost' ? 'Prime Cost' : 'Diminishing') : 'N/A';
+
+            const row = listEl.insertRow();
+            const esc = TaxCalculations.escapeHtml;
+            row.innerHTML = `
+                <td class="p-2 border-b border-gray-200 text-sm">${esc(exp.description)}</td>
+                <td class="p-2 border-b border-gray-200 text-sm">${esc(exp.date)}</td>
+                <td class="p-2 border-b border-gray-200 text-sm">${formatCurrency(exp.cost)}</td>
+                <td class="p-2 border-b border-gray-200 text-sm">${exp.workPercentage}%</td>
+                <td class="p-2 border-b border-gray-200 text-sm">${methodDisplay}</td>
+                <td class="p-2 border-b border-gray-200 text-sm font-semibold">${formatCurrency(deduction)}</td>
+                <td class="p-2 border-b border-gray-200 text-xs">${claimScheduleHtml}</td>
+                <td class="p-2 border-b border-gray-200 text-sm">
+                    <button class="text-blue-500 hover:text-blue-700 text-xs font-semibold mr-2" data-exp-id="${esc(exp.id)}" data-action="edit">Edit</button>
+                    <button class="text-purple-500 hover:text-purple-700 text-xs font-semibold mr-2" data-exp-id="${esc(exp.id)}" data-action="move-wfh">→ WFH</button>
+                    <button class="text-red-500 hover:text-red-700 text-xs font-semibold" data-exp-id="${esc(exp.id)}" data-action="remove">Remove</button>
+                </td>
+            `;
+            row.querySelectorAll('[data-action="edit"]').forEach(btn =>
+                btn.addEventListener('click', () => App.editGeneralExpense(btn.dataset.expId)));
+            row.querySelectorAll('[data-action="move-wfh"]').forEach(btn =>
+                btn.addEventListener('click', () => App.moveExpenseToWfh(btn.dataset.expId)));
+            row.querySelectorAll('[data-action="remove"]').forEach(btn =>
+                btn.addEventListener('click', () => App.removeGeneralExpense(btn.dataset.expId)));
+        });
+    };
+
+    const displayWfhHoursList = (wfhData) => {
+        const totalMinutes = wfhData.totalMinutes || 0;
+        const timeString = minutesToTimeString(totalMinutes);
+        const decimalHours = (totalMinutes / 60).toFixed(2);
+
+        const combinedDisplay = `${timeString} hours Decimal ${decimalHours} hours`;
+        document.getElementById('wfh-total-hours').textContent = combinedDisplay;
+
+        const listEl = document.getElementById('wfh-hours-list');
+        listEl.innerHTML = '';
+        const hoursLog = wfhData.hoursLog;
+        if (hoursLog.length === 0) {
+            listEl.innerHTML = '<li class="text-gray-400">No hours logged yet.</li>';
+            return;
+        }
+        [...hoursLog].sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(log => {
+            const li = document.createElement('li');
+            li.className = "flex justify-between items-center py-1";
+            const logTimeString = minutesToTimeString(log.minutes);
+            const span = document.createElement('span');
+            span.textContent = `${log.date}: `;
+            const strong = document.createElement('strong');
+            strong.textContent = `${logTimeString} hours`;
+            span.appendChild(strong);
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'text-red-500 hover:text-red-700 text-xs font-semibold';
+            removeBtn.textContent = 'Remove';
+            removeBtn.addEventListener('click', () => App.removeWfhHour(log.id));
+            li.appendChild(span);
+            li.appendChild(removeBtn);
+            listEl.appendChild(li);
+        });
+    };
+
+    const displayWfhAssetsList = (assets) => {
+        const listEl = document.getElementById('wfh-assets-list-body');
+        listEl.innerHTML = '';
+        if (!assets || assets.length === 0) {
+            listEl.innerHTML = '<tr><td colspan="9" class="text-center text-gray-400 py-2">No assets added yet.</td></tr>';
+            return;
+        }
+
+        [...assets].sort((a, b) => new Date(b.date) - new Date(a.date)).forEach((asset, index) => {
+            const row = listEl.insertRow();
+
+            const createCell = (content, classes = [], isHtml = false) => {
+                const cell = document.createElement('td');
+                cell.className = 'p-2 border-b border-gray-200 text-sm';
+                classes.forEach(c => cell.classList.add(c));
+                if (isHtml) {
+                    cell.innerHTML = content;
+                } else {
+                    cell.textContent = String(content);
+                }
+                return cell;
+            };
+
+            // Same gate as the section totals, so the rows always sum to the
+            // total displayed above them; also honours an explicit 0% work
+            // use (the old `|| 100` coerced it to a full-cost row).
+            const deduction = TaxCalculations.calculateItemDeductionThisFY(asset, 100);
+            const workPercentage = TaxCalculations.normaliseWorkPct(asset.workPercentage, 100);
+
+            const claimScheduleHtml = TaxCalculations.generateDepreciationSchedule(asset);
+
+            let methodDisplay = 'Immediate';
+            if (asset.isDepreciable) {
+                methodDisplay = asset.depreciationMethod === 'prime_cost' ? 'Prime Cost' : 'Diminishing';
+            }
+
+            row.appendChild(createCell(index + 1, ['font-semibold']));
+            row.appendChild(createCell(asset.description));
+            row.appendChild(createCell(asset.date));
+            row.appendChild(createCell(formatCurrency(asset.cost)));
+            row.appendChild(createCell(`${TaxCalculations.normaliseWorkPct(asset.workPercentage, 100)}%`));
+            row.appendChild(createCell(methodDisplay));
+            row.appendChild(createCell(formatCurrency(deduction), ['font-semibold']));
+            row.appendChild(createCell(claimScheduleHtml, ['text-xs'], true));
+
+            const actionsCell = document.createElement('td');
+            actionsCell.className = 'p-2 border-b border-gray-200 text-sm';
+
+            const editButton = document.createElement('button');
+            editButton.type = 'button';
+            editButton.className = 'text-blue-500 hover:text-blue-700 text-xs font-semibold mr-2';
+            editButton.textContent = 'Edit';
+            editButton.addEventListener('click', () => App.editWfhAsset(asset.id));
+
+            const moveButton = document.createElement('button');
+            moveButton.type = 'button';
+            moveButton.className = 'text-orange-500 hover:text-orange-700 text-xs font-semibold mr-2';
+            moveButton.textContent = '→ General';
+            moveButton.addEventListener('click', () => App.moveWfhAssetToGeneral(asset.id));
+
+            const removeButton = document.createElement('button');
+            removeButton.type = 'button';
+            removeButton.className = 'text-red-500 hover:text-red-700 text-xs font-semibold';
+            removeButton.textContent = 'Remove';
+            removeButton.addEventListener('click', () => App.removeWfhAsset(asset.id));
+
+            actionsCell.appendChild(editButton);
+            actionsCell.appendChild(moveButton);
+            actionsCell.appendChild(removeButton);
+            row.appendChild(actionsCell);
+        });
+    };
+
+    const updateWfhMethodDisplay = (method) => {
+        document.getElementById('wfh-current-method-display').textContent = method === 'fixed_rate' ? 'ATO Fixed Rate' : 'Actual Cost';
+        document.getElementById('wfh-fixed-rate-details').classList.toggle('hidden', method !== 'fixed_rate');
+        document.getElementById('wfh-actual-cost-details').classList.toggle('hidden', method !== 'actual_cost');
+        const fixedRateBtn = document.getElementById('wfh-use-fixed-rate-btn');
+        const actualCostBtn = document.getElementById('wfh-use-actual-cost-btn');
+        fixedRateBtn.classList.toggle('bg-indigo-700', method === 'fixed_rate');
+        fixedRateBtn.classList.toggle('bg-indigo-500', method !== 'fixed_rate');
+        actualCostBtn.classList.toggle('bg-purple-700', method === 'actual_cost');
+        actualCostBtn.classList.toggle('bg-purple-500', method !== 'actual_cost');
+    };
+
+    const updateAllSummaries = (appData) => {
+
+        document.getElementById('wfh-fixed-rate-value').textContent = formatCurrency(window.WFH_FIXED_RATE_PER_HOUR);
+
+        const {
+            totalAssessableIncome, totalTaxWithheld,
+            totalGeneralDeductions, totalWfhDeductions, totalSuperDeductions,
+            overallTotalDeductions, taxableIncome,
+            grossTax, medicareLevy, mls, offsets, netTaxPayable, finalOutcome,
+            identicalAssetWarnings, sameDaySetNotices,
+        } = TaxCalculations.calculateYearSummary(appData);
+
+        const outcomeText = finalOutcome >= 0 ? `${formatCurrency(finalOutcome)} Refund` : `${formatCurrency(Math.abs(finalOutcome))} Payable`;
+
+        // --- Update UI Elements ---
+        document.getElementById('dashboard-taxable-income').textContent = formatCurrency(taxableIncome);
+        document.getElementById('dashboard-total-deductions').textContent = formatCurrency(overallTotalDeductions);
+        document.getElementById('dashboard-tax-outcome').textContent = outcomeText;
+        document.getElementById('total-assessable-income').textContent = formatCurrency(totalAssessableIncome);
+        document.getElementById('total-tax-withheld-summary').textContent = formatCurrency(totalTaxWithheld);
+        document.getElementById('total-general-deductions').textContent = formatCurrency(totalGeneralDeductions);
+        document.getElementById('total-wfh-deduction').textContent = formatCurrency(totalWfhDeductions);
+
+        // Update WFH Method-Specific Details
+        const fixedRateDeductionValue = (appData.wfh.method === 'fixed_rate') ? totalWfhDeductions : 0;
+        document.getElementById('wfh-fixed-rate-deduction').textContent = formatCurrency(fixedRateDeductionValue);
+        const runningExpensesTotal = (appData.wfh.actualCostDetails.properties || []).reduce(
+            (sum, prop) => sum + TaxCalculations.calculateWfhRunningExpensesDeduction(prop), 0);
+        document.getElementById('wfh-running-expenses-subtotal').textContent = formatCurrency(runningExpensesTotal);
+        document.getElementById('wfh-assets-subtotal').textContent = formatCurrency(TaxCalculations.calculateWfhAssetsDeduction(appData.wfh.actualCostDetails.assets));
+        document.getElementById('wfh-actual-cost-deduction').textContent = formatCurrency(TaxCalculations.calculateWfhActualCostDeduction(appData.wfh.actualCostDetails));
+
+        // --- Summary Page ---
+        document.getElementById('summary-assessable-income').textContent = formatCurrency(totalAssessableIncome);
+        document.getElementById('summary-total-deductions').textContent = formatCurrency(overallTotalDeductions);
+        document.getElementById('summary-general-deductions').textContent = formatCurrency(totalGeneralDeductions);
+        document.getElementById('summary-wfh-deductions').textContent = formatCurrency(totalWfhDeductions);
+        document.getElementById('summary-super-deductions').textContent = formatCurrency(totalSuperDeductions);
+        document.getElementById('summary-taxable-income').textContent = formatCurrency(taxableIncome);
+        document.getElementById('summary-gross-tax').textContent = formatCurrency(grossTax);
+        document.getElementById('summary-medicare-levy').textContent = formatCurrency(medicareLevy);
+        document.getElementById('summary-mls').textContent = formatCurrency(mls);
+        document.getElementById('summary-tax-offsets').textContent = formatCurrency(offsets.total);
+        document.getElementById('summary-lito-offset').textContent = formatCurrency(offsets.litoApplied ?? offsets.lito);
+        document.getElementById('summary-lito-offset-row').style.display = offsets.lito > 0 ? 'flex' : 'none';
+        document.getElementById('summary-franking-credits-offset').textContent = formatCurrency(offsets.frankingCredits);
+        document.getElementById('summary-phi-offset').textContent = formatCurrency(offsets.phiOffset);
+        // An offset that turns negative (over-claimed PHI rebate, or an
+        // offset total in liability) is an amount owing, not a benefit.
+        const phiEl = document.getElementById('summary-phi-offset');
+        phiEl.classList.toggle('text-green-500', offsets.phiOffset >= 0);
+        phiEl.classList.toggle('text-red-600', offsets.phiOffset < 0);
+        document.getElementById('summary-phi-offset-label').textContent =
+            offsets.phiOffset < 0 ? '- Private Health Insurance (amount owing):' : '- Private Health Insurance:';
+        const totalEl = document.getElementById('summary-tax-offsets');
+        totalEl.classList.toggle('text-green-500', offsets.total >= 0);
+        totalEl.classList.toggle('text-red-600', offsets.total < 0);
+        // A negative net tax is real: refundable offsets (franking credits,
+        // PHI offset) exceeding tax increase the refund. Snap sub-cent float
+        // residue to 0 so it doesn't render as "-$0.00".
+        const netTaxShown = Math.abs(netTaxPayable) < 0.005 ? 0 : netTaxPayable;
+        document.getElementById('summary-net-tax').textContent = formatCurrency(netTaxShown);
+        document.getElementById('summary-tax-withheld').textContent = formatCurrency(totalTaxWithheld);
+        document.getElementById('summary-final-outcome').textContent = outcomeText;
+
+        // Identical low-value assets: the ATO tests the $300 threshold on
+        // the combined cost, so surface groups for review (never reclassify
+        // silently). Each group carries a one-action retag — the user is
+        // already judging the group here — routed through App so storage
+        // writes stay out of the renderer.
+        const warnBox = document.getElementById('identical-assets-warning');
+        const warnList = document.getElementById('identical-assets-warning-list');
+        warnList.innerHTML = '';
+        warnBox.classList.toggle('hidden', (identicalAssetWarnings || []).length === 0);
+        (identicalAssetWarnings || []).forEach(group => {
+            const li = document.createElement('li');
+            const span = document.createElement('span');
+            span.textContent = `"${group.description}" × ${group.count} — combined ${formatCurrency(group.combinedCost)} `
+                + `(${group.items.map(i => `${i.source}: ${formatCurrency(i.cost)}`).join(', ')})`;
+            li.appendChild(span);
+            [['service', 'These are services'], ['consumable', 'These are consumables']].forEach(([type, label]) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.textContent = label;
+                btn.className = 'text-xs underline ml-2 text-amber-900 hover:text-amber-700 font-semibold';
+                btn.setAttribute('aria-label', `Mark the ${group.count} "${group.description}" items as ${type} and stop flagging them`);
+                btn.addEventListener('click', () => App.retagIdenticalGroup(group.items, type));
+                li.appendChild(btn);
+            });
+            warnList.appendChild(li);
+        });
+
+        // Same-day purchases: the "set of assets" limb is a judgement call,
+        // so this is a question in its own softer card — never mixed with
+        // the identical-assets warning above.
+        const setBox = document.getElementById('sameday-set-notice');
+        const setList = document.getElementById('sameday-set-notice-list');
+        setList.innerHTML = '';
+        setBox.classList.toggle('hidden', (sameDaySetNotices || []).length === 0);
+        (sameDaySetNotices || []).forEach(set => {
+            const li = document.createElement('li');
+            li.textContent = `${set.date} — ${set.count} items totalling ${formatCurrency(set.combinedCost)} `
+                + `(${set.items.map(i => `${i.description} (${formatCurrency(i.cost)})`).join(', ')})`;
+            setList.appendChild(li);
+        });
+
+        // Cross-year consistency: same asset re-entered across years but the
+        // copies disagree. Read-only audit over stored years; rendered as a
+        // red "records disagree" card — a factual finding, unlike the amber
+        // judgement-call warnings above.
+        const auditBox = document.getElementById('crossyear-audit-warning');
+        const auditList = document.getElementById('crossyear-audit-warning-list');
+        auditList.innerHTML = '';
+        let auditFindings = [];
+        try {
+            auditFindings = (typeof StorageManager !== 'undefined' && StorageManager.getCrossYearAssetAudit)
+                ? StorageManager.getCrossYearAssetAudit() : [];
+        } catch (e) {
+            auditFindings = [];
+        }
+        auditBox.classList.toggle('hidden', auditFindings.length === 0);
+        auditFindings.forEach(finding => {
+            const li = document.createElement('li');
+            const copies = finding.copies.map(c =>
+                `${c.year} (${c.list}): ${formatCurrency(c.cost)}${c.isDepreciable ? `, ${c.effectiveLife}yr ${c.depreciationMethod === 'diminishing_value' ? 'DV' : 'PC'}` : ', not depreciable'}`).join(' · ');
+            li.textContent = `"${finding.description}" — ${copies}`;
+            auditList.appendChild(li);
+        });
+    };
+
+    return {
+        showNotification, showConfirmation, showSection, populateOtherIncomeForm,
+        displayIncomeList, displayGeneralExpensesList, displayWfhHoursList,
+        updateWfhMethodDisplay, updateAllSummaries,
+        displayWfhPropertiesList, showWfhPropertyModal, hideWfhPropertyModal,
+        showWfhAssetModal, hideWfhAssetModal, displayWfhAssetsList,
+        showEditPaygModal, hideEditPaygModal,
+        showEditExpenseModal, hideEditExpenseModal,
+        updateRunningExpensesSubtotal,
+        flashHighlight,
+        toggleFamilyFields,
+        toggleMedicareDaysField,
+        populateTaxpayerDetailsForm,
+        populateYearSelector,
+        updateFinancialYearDisplays,
+        minutesToTimeString
+    };
+})();
+
+window.UIManager = UIManager;

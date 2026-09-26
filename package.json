@@ -1,0 +1,29 @@
+{
+  "name": "taxcalc-au",
+  "version": "1.11.3",
+  "description": "Australian tax deductions helper - client-side app",
+  "scripts": {
+    "test": "jest --coverage",
+    "test:watch": "jest --watch"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coverageDirectory": "coverage",
+    "coverageProvider": "v8",
+    "collectCoverageFrom": [
+      "js/calculations.js",
+      "js/constants.js"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "lines": 90,
+        "functions": 90,
+        "branches": 80
+      }
+    }
+  }
+}
